@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Trial is Ending - ProperPOS</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .email-wrapper {
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      padding: 40px 30px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffffff;
+      margin: 0;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    h1 {
+      color: #1f2937;
+      font-size: 24px;
+      margin: 0 0 20px 0;
+    }
+    p {
+      color: #4b5563;
+      margin: 0 0 16px 0;
+    }
+    .button {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-weight: 600;
+      margin: 20px 0;
+    }
+    .countdown-box {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-radius: 8px;
+      padding: 24px;
+      margin: 24px 0;
+      text-align: center;
+    }
+    .countdown-number {
+      font-size: 48px;
+      font-weight: 700;
+      color: #92400e;
+      margin: 0;
+    }
+    .countdown-label {
+      color: #b45309;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin: 24px 0;
+    }
+    .stat-card {
+      background-color: #f9fafb;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #6366f1;
+      margin: 0;
+    }
+    .stat-label {
+      color: #6b7280;
+      font-size: 14px;
+      margin: 4px 0 0 0;
+    }
+    .pricing-box {
+      background-color: #f9fafb;
+      border-radius: 8px;
+      padding: 24px;
+      margin: 24px 0;
+    }
+    .plan-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .plan-row:last-child {
+      border-bottom: none;
+    }
+    .plan-name {
+      font-weight: 600;
+      color: #1f2937;
+    }
+    .plan-price {
+      color: #6366f1;
+      font-weight: 700;
+    }
+    .recommended {
+      background-color: #6366f1;
+      color: white;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-left: 8px;
+    }
+    .footer {
+      background-color: #f9fafb;
+      padding: 24px 30px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    .footer p {
+      color: #9ca3af;
+      font-size: 14px;
+      margin: 0;
+    }
+    .footer a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="email-wrapper">
+      <div class="header">
+        <h1 class="logo">ProperPOS</h1>
+      </div>
+      <div class="content">
+        <h1>Your Trial is Ending Soon ⏰</h1>
+        <p>Hi {{userName}},</p>
+        <p>Your free trial of ProperPOS will end in just a few days. Don't lose access to all the features you've been using!</p>
+
+        <div class="countdown-box">
+          <p class="countdown-number">{{daysRemaining}}</p>
+          <p class="countdown-label">Days Remaining</p>
+        </div>
+
+        <p>Here's what you've accomplished during your trial:</p>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <p class="stat-value">{{ordersProcessed}}</p>
+            <p class="stat-label">Orders Processed</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-value">{{totalRevenue}}</p>
+            <p class="stat-label">Revenue Tracked</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-value">{{productsAdded}}</p>
+            <p class="stat-label">Products Added</p>
+          </div>
+          <div class="stat-card">
+            <p class="stat-value">{{customersAdded}}</p>
+            <p class="stat-label">Customers Added</p>
+          </div>
+        </div>
+
+        <h3 style="margin: 24px 0 16px 0; color: #1f2937;">Choose a plan that fits your business:</h3>
+
+        <div class="pricing-box">
+          <div class="plan-row">
+            <div>
+              <span class="plan-name">Starter</span>
+            </div>
+            <span class="plan-price">$29/mo</span>
+          </div>
+          <div class="plan-row">
+            <div>
+              <span class="plan-name">Professional</span>
+              <span class="recommended">RECOMMENDED</span>
+            </div>
+            <span class="plan-price">$79/mo</span>
+          </div>
+          <div class="plan-row">
+            <div>
+              <span class="plan-name">Enterprise</span>
+            </div>
+            <span class="plan-price">$199/mo</span>
+          </div>
+        </div>
+
+        <div style="text-align: center;">
+          <a href="{{upgradeUrl}}" class="button">Choose a Plan</a>
+        </div>
+
+        <p style="background-color: #ecfdf5; padding: 16px; border-radius: 8px; color: #065f46; font-size: 14px;">
+          <strong>🎁 Special Offer:</strong> Upgrade now and get {{discountPercent}}% off your first {{discountMonths}} months! Use code: <strong>{{discountCode}}</strong>
+        </p>
+
+        <p>Have questions? Our team is happy to help you choose the right plan for your business.</p>
+
+        <p>Best regards,<br><strong>The ProperPOS Team</strong></p>
+      </div>
+      <div class="footer">
+        <p>© {{currentYear}} ProperPOS. All rights reserved.</p>
+        <p><a href="{{pricingUrl}}">View Pricing</a> | <a href="{{supportUrl}}">Contact Sales</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

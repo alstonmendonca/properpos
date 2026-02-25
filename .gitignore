@@ -1,0 +1,86 @@
+# Dependencies
+node_modules
+**/node_modules
+.npm
+.yarn
+.pnpm-store
+
+# Build outputs
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+build
+**/build
+.turbo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files (NEVER commit secrets)
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+*.orig
+*~
+
+# Test coverage
+coverage
+**/coverage
+*.lcov
+
+# Docker data
+docker/data
+docker/volumes
+
+# Secrets (NEVER commit)
+*.pem
+*.key
+*.crt
+*.cert
+secrets/
+credentials/
+*.secrets
+*.p12
+*.pfx
+
+# Temporary files
+tmp
+temp
+*.tmp
+*.temp
+.cache
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Next.js
+.next
+.vercel
+
+# Sentry
+.sentryclirc
+.env.sentry-build-plugin
+
+# Monitoring data
+docker/monitoring/data

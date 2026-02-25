@@ -1,0 +1,334 @@
+version: '3.8'
+
+services:
+  # ===================
+  # Infrastructure
+  # ===================
+
+  mongodb:
+    image: mongo:7.0
+    container_name: properpos-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - properpos-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: properpos-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    networks:
+      - properpos-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================
+  # Backend Services
+  # ===================
+
+  gateway:
+    build:
+      context: ./backend
+      dockerfile: ./services/gateway/Dockerfile
+    container_name: properpos-gateway
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-key}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+      - AUTH_SERVICE_URL=http://auth:3001
+      - TENANT_SERVICE_URL=http://tenant:3002
+      - POS_SERVICE_URL=http://pos:3003
+      - INVENTORY_SERVICE_URL=http://inventory:3004
+      - ANALYTICS_SERVICE_URL=http://analytics:3005
+      - BILLING_SERVICE_URL=http://billing:3006
+      - NOTIFICATION_SERVICE_URL=http://notification:3008
+      - AUDIT_SERVICE_URL=http://audit:3009
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth:
+        condition: service_started
+    networks:
+      - properpos-network
+
+  auth:
+    build:
+      context: ./backend
+      dockerfile: ./services/auth/Dockerfile
+    container_name: properpos-auth
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3001
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017/properpos_platform?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-key}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-refresh-secret-key}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  tenant:
+    build:
+      context: ./backend
+      dockerfile: ./services/tenant/Dockerfile
+    container_name: properpos-tenant
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3002
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017/properpos_platform?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  pos:
+    build:
+      context: ./backend
+      dockerfile: ./services/pos/Dockerfile
+    container_name: properpos-pos
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3003
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+      - INVENTORY_SERVICE_URL=http://inventory:3004
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  inventory:
+    build:
+      context: ./backend
+      dockerfile: ./services/inventory/Dockerfile
+    container_name: properpos-inventory
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3004
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  analytics:
+    build:
+      context: ./backend
+      dockerfile: ./services/analytics/Dockerfile
+    container_name: properpos-analytics
+    restart: unless-stopped
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3005
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  billing:
+    build:
+      context: ./backend
+      dockerfile: ./services/billing/Dockerfile
+    container_name: properpos-billing
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3006
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017/properpos_platform?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_xxx}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-whsec_xxx}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  notification:
+    build:
+      context: ./backend
+      dockerfile: ./services/notification/Dockerfile
+    container_name: properpos-notification
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3008
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+      - SMTP_HOST=${SMTP_HOST:-smtp.mailtrap.io}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@properpos.com}
+      - TWILIO_SID=${TWILIO_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_PHONE=${TWILIO_PHONE:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  audit:
+    build:
+      context: ./backend
+      dockerfile: ./services/audit/Dockerfile
+    container_name: properpos-audit
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3009
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-password}@mongodb:27017?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis123}@redis:6379
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  # ===================
+  # Backup
+  # ===================
+
+  mongo-backup:
+    image: mongo:7.0
+    container_name: properpos-mongo-backup
+    restart: unless-stopped
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: "27017"
+      MONGO_ROOT_USER: ${MONGO_ROOT_USER:-admin}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-password}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: "30"
+      BACKUP_CRON_SCHEDULE: "${BACKUP_CRON_SCHEDULE:-0 2 * * *}"
+    volumes:
+      - mongodb_backups:/backups
+      - ./scripts/backup-mongodb.sh:/usr/local/bin/backup-mongodb.sh:ro
+      - ./scripts/restore-mongodb.sh:/usr/local/bin/restore-mongodb.sh:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        echo "ProperPOS MongoDB Backup Service started"
+        echo "Schedule: $${BACKUP_CRON_SCHEDULE}"
+        echo "Retention: $${RETENTION_DAYS} days"
+        # Install cron (not included in mongo image by default)
+        apt-get update -qq && apt-get install -y -qq cron > /dev/null 2>&1
+        # Write cron schedule
+        echo "$${BACKUP_CRON_SCHEDULE} /usr/local/bin/backup-mongodb.sh >> /var/log/backup.log 2>&1" > /etc/cron.d/mongo-backup
+        echo "" >> /etc/cron.d/mongo-backup
+        chmod 0644 /etc/cron.d/mongo-backup
+        crontab /etc/cron.d/mongo-backup
+        # Pass environment variables to cron
+        printenv | grep -E '^(MONGO_|BACKUP_|RETENTION_)' >> /etc/environment
+        # Run initial backup on startup
+        echo "Running initial backup..."
+        /usr/local/bin/backup-mongodb.sh
+        # Start cron in foreground
+        echo "Starting cron daemon..."
+        cron -f
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - properpos-network
+
+  # ===================
+  # Frontend
+  # ===================
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: properpos-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+    depends_on:
+      - gateway
+    networks:
+      - properpos-network
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  redis_data:
+  mongodb_backups:
+
+networks:
+  properpos-network:
+    driver: bridge

@@ -1,0 +1,147 @@
+# ProperPOS Alert Rules
+groups:
+  - name: properpos-alerts
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+
+      # High latency
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.job }}"
+          description: "95th percentile latency is {{ $value | humanizeDuration }}"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is {{ $value | humanizePercentage }} available"
+
+      # MongoDB connection issues
+      - alert: MongoDBConnectionsHigh
+        expr: mongodb_connections{state="current"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MongoDB connections"
+          description: "Current connections: {{ $value }}"
+
+      # Redis memory usage
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # Failed login attempts
+      - alert: HighFailedLogins
+        expr: sum(rate(auth_login_failures_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of failed login attempts"
+          description: "{{ $value }} failed logins per second"
+
+      # Payment failures
+      - alert: PaymentFailures
+        expr: sum(rate(billing_payment_failures_total[1h])) > 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High payment failure rate"
+          description: "{{ $value }} payment failures in the last hour"
+
+  - name: sla-alerts
+    rules:
+      # SLA breach - availability
+      - alert: SLAAvailabilityBreach
+        expr: avg_over_time(up{job=~".*-service"}[1h]) < 0.999
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLA availability breach for {{ $labels.job }}"
+          description: "Availability is {{ $value | humanizePercentage }} (SLA: 99.9%)"
+
+      # SLA breach - response time
+      - alert: SLAResponseTimeBreach
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[1h])) > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLA response time breach"
+          description: "99th percentile latency is {{ $value | humanizeDuration }} (SLA: 1s)"
+
+  - name: business-alerts
+    rules:
+      # No orders processed
+      - alert: NoOrdersProcessed
+        expr: sum(increase(pos_orders_total[1h])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No orders processed"
+          description: "No orders have been processed in the last hour"
+
+      # Subscription cancellations spike
+      - alert: SubscriptionCancellationSpike
+        expr: sum(increase(billing_subscription_cancellations_total[1d])) > sum(increase(billing_subscription_creations_total[1d])) * 0.1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "High subscription cancellation rate"
+          description: "Cancellations exceed 10% of new subscriptions"

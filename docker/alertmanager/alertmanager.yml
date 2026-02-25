@@ -1,0 +1,102 @@
+# ProperPOS Alertmanager Configuration
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: '${SMTP_HOST}:587'
+  smtp_from: 'alerts@properpos.com'
+  smtp_auth_username: '${SMTP_USER}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+# Route tree
+route:
+  group_by: ['alertname', 'severity', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default-receiver'
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts - standard notification
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      group_wait: 1m
+      repeat_interval: 4h
+
+    # Business alerts - notify business team
+    - match_re:
+        alertname: (NoOrdersProcessed|SubscriptionCancellationSpike|PaymentFailures)
+      receiver: 'business-receiver'
+      group_wait: 5m
+      repeat_interval: 2h
+
+# Inhibition rules
+inhibit_rules:
+  # If service is down, don't alert on high latency
+  - source_match:
+      alertname: ServiceDown
+    target_match:
+      alertname: HighLatency
+    equal: ['job']
+
+  # If critical alert exists, suppress warnings for same job
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['alertname', 'job']
+
+# Receivers
+receivers:
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'ops@properpos.com'
+        send_resolved: true
+    slack_configs:
+      - channel: '#alerts'
+        send_resolved: true
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+
+  - name: 'critical-receiver'
+    email_configs:
+      - to: 'oncall@properpos.com'
+        send_resolved: true
+    slack_configs:
+      - channel: '#alerts-critical'
+        send_resolved: true
+        title: '🚨 CRITICAL: {{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        send_resolved: true
+
+  - name: 'warning-receiver'
+    email_configs:
+      - to: 'ops@properpos.com'
+        send_resolved: true
+    slack_configs:
+      - channel: '#alerts'
+        send_resolved: true
+        title: '⚠️ Warning: {{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+
+  - name: 'business-receiver'
+    email_configs:
+      - to: 'business@properpos.com'
+        send_resolved: true
+    slack_configs:
+      - channel: '#business-alerts'
+        send_resolved: true
+        title: '📊 Business Alert: {{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+
+# Templates
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

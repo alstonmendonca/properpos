@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice from ProperPOS</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .email-wrapper {
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      padding: 40px 30px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffffff;
+      margin: 0;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    h1 {
+      color: #1f2937;
+      font-size: 24px;
+      margin: 0 0 20px 0;
+    }
+    p {
+      color: #4b5563;
+      margin: 0 0 16px 0;
+    }
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .invoice-number {
+      font-size: 14px;
+      color: #6b7280;
+    }
+    .invoice-status {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-paid {
+      background-color: #d1fae5;
+      color: #065f46;
+    }
+    .status-pending {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+    .invoice-details {
+      background-color: #f9fafb;
+      border-radius: 8px;
+      padding: 24px;
+      margin: 24px 0;
+    }
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .detail-row:last-child {
+      border-bottom: none;
+    }
+    .detail-label {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .detail-value {
+      color: #1f2937;
+      font-weight: 500;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 0;
+      margin-top: 16px;
+      border-top: 2px solid #6366f1;
+    }
+    .total-label {
+      color: #1f2937;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .total-value {
+      color: #6366f1;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .button {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-weight: 600;
+      margin: 20px 0;
+    }
+    .line-items {
+      margin: 24px 0;
+    }
+    .line-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .line-item-name {
+      color: #1f2937;
+    }
+    .line-item-price {
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .footer {
+      background-color: #f9fafb;
+      padding: 24px 30px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    .footer p {
+      color: #9ca3af;
+      font-size: 14px;
+      margin: 0;
+    }
+    .footer a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="email-wrapper">
+      <div class="header">
+        <h1 class="logo">ProperPOS</h1>
+      </div>
+      <div class="content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+          <div>
+            <h1 style="margin: 0;">Invoice</h1>
+            <p class="invoice-number" style="margin: 4px 0 0 0;">{{invoiceNumber}}</p>
+          </div>
+          <span class="invoice-status status-{{invoiceStatus}}">{{invoiceStatus}}</span>
+        </div>
+
+        <p>Hi {{userName}},</p>
+        <p>Thank you for your subscription to ProperPOS. Here's your invoice for the current billing period.</p>
+
+        <div class="invoice-details">
+          <div class="detail-row">
+            <span class="detail-label">Invoice Date</span>
+            <span class="detail-value">{{invoiceDate}}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Due Date</span>
+            <span class="detail-value">{{dueDate}}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Billing Period</span>
+            <span class="detail-value">{{billingPeriod}}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Payment Method</span>
+            <span class="detail-value">{{paymentMethod}}</span>
+          </div>
+        </div>
+
+        <div class="line-items">
+          <h3 style="margin: 0 0 16px 0; color: #1f2937;">Items</h3>
+          {{#each lineItems}}
+          <div class="line-item">
+            <span class="line-item-name">{{this.description}}</span>
+            <span class="line-item-price">{{this.amount}}</span>
+          </div>
+          {{/each}}
+        </div>
+
+        <div class="invoice-details">
+          <div class="detail-row">
+            <span class="detail-label">Subtotal</span>
+            <span class="detail-value">{{subtotal}}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Tax ({{taxRate}}%)</span>
+            <span class="detail-value">{{taxAmount}}</span>
+          </div>
+          {{#if discount}}
+          <div class="detail-row">
+            <span class="detail-label">Discount</span>
+            <span class="detail-value" style="color: #059669;">-{{discount}}</span>
+          </div>
+          {{/if}}
+          <div class="total-row">
+            <span class="total-label">Total</span>
+            <span class="total-value">{{totalAmount}}</span>
+          </div>
+        </div>
+
+        <div style="text-align: center;">
+          <a href="{{invoiceUrl}}" class="button">View Invoice</a>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280;">If you have any questions about this invoice, please contact our billing team at <a href="mailto:billing@properpos.com" style="color: #6366f1;">billing@properpos.com</a>.</p>
+
+        <p>Best regards,<br><strong>The ProperPOS Billing Team</strong></p>
+      </div>
+      <div class="footer">
+        <p><strong>{{companyName}}</strong></p>
+        <p>{{companyAddress}}</p>
+        <p style="margin-top: 16px;">© {{currentYear}} ProperPOS. All rights reserved.</p>
+        <p><a href="{{billingPortalUrl}}">Manage Billing</a> | <a href="{{supportUrl}}">Contact Support</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

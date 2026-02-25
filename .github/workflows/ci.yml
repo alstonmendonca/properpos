@@ -1,0 +1,592 @@
+# ProperPOS SaaS CI/CD Pipeline
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+  NODE_VERSION: '20'
+
+jobs:
+  # Lint and type check
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript check
+        run: npm run type-check
+
+  # Run unit and integration tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          MONGODB_URI: mongodb://localhost:27017/properpos_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-key
+          NODE_ENV: test
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          MONGODB_URI: mongodb://localhost:27017/properpos_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-key
+          NODE_ENV: test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
+  # Run E2E tests
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Start services
+        run: docker compose up -d
+        env:
+          MONGODB_URI: mongodb://localhost:27017/properpos_test
+          REDIS_URL: redis://localhost:6379
+
+      - name: Wait for services
+        run: |
+          npm run wait-for-services
+          sleep 10
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
+
+  # Security scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Build Docker images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - gateway
+          - auth
+          - tenant
+          - pos
+          - inventory
+          - analytics
+          - billing
+          - notification
+          - audit
+          - frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.service == 'frontend' && 'frontend/Dockerfile' || format('backend/services/{0}/Dockerfile', matrix.service) }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.properpos.com
+    env:
+      ECS_CLUSTER: properpos-staging
+      SERVICE_PREFIX: properpos-staging
+      DEPLOY_ENV: staging
+      HEALTH_URL: https://staging.properpos.com/api/v1/health
+      FRONTEND_URL: https://staging.properpos.com
+
+    strategy:
+      max-parallel: 3
+      matrix:
+        service:
+          - gateway
+          - auth
+          - tenant
+          - pos
+          - inventory
+          - analytics
+          - billing
+          - notification
+          - audit
+          - frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download current task definition
+        id: current-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} \
+            --query 'taskDefinition' \
+            --output json > current-task-def.json
+          CURRENT_REVISION=$(jq -r '.taskDefinitionArn' current-task-def.json)
+          echo "current_revision=${CURRENT_REVISION}" >> "$GITHUB_OUTPUT"
+
+      - name: Render new task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: current-task-def.json
+          container-name: ${{ matrix.service }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Deploy to ECS
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.SERVICE_PREFIX }}-${{ matrix.service }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+
+      - name: Health check verification
+        if: matrix.service == 'gateway'
+        run: |
+          echo "Waiting for gateway service to become healthy..."
+          MAX_ATTEMPTS=10
+          SLEEP_INTERVAL=15
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Health check attempt ${ATTEMPT}/${MAX_ATTEMPTS}..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.HEALTH_URL }}" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Health check passed with status ${HTTP_STATUS}"
+              exit 0
+            fi
+            echo "Health check returned status ${HTTP_STATUS}, retrying in ${SLEEP_INTERVAL}s..."
+            sleep $SLEEP_INTERVAL
+          done
+          echo "Health check failed after ${MAX_ATTEMPTS} attempts"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "Deployment health check failed. Rolling back to previous task definition..."
+          PREVIOUS_REVISION="${{ steps.current-task-def.outputs.current_revision }}"
+          echo "Rolling back service ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} to ${PREVIOUS_REVISION}"
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} \
+            --task-definition "${PREVIOUS_REVISION}" \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.SERVICE_PREFIX }}-${{ matrix.service }}
+          echo "Rollback completed for ${{ matrix.service }}"
+
+  # Smoke tests for staging
+  smoke-test-staging:
+    name: Smoke Tests (Staging)
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment:
+      name: staging
+      url: https://staging.properpos.com
+    steps:
+      - name: Verify gateway health endpoint returns 200
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://staging.properpos.com/api/v1/health")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FAIL: Gateway health endpoint returned ${HTTP_STATUS}, expected 200"
+            exit 1
+          fi
+          echo "PASS: Gateway health endpoint returned 200"
+
+      - name: Verify frontend returns 200
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://staging.properpos.com")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FAIL: Frontend returned ${HTTP_STATUS}, expected 200"
+            exit 1
+          fi
+          echo "PASS: Frontend returned 200"
+
+      - name: Verify deployed version matches git SHA
+        run: |
+          DEPLOYED_VERSION=$(curl -s "https://staging.properpos.com/api/v1/health" | jq -r '.version // .sha // .commit // empty')
+          EXPECTED_SHA="${{ github.sha }}"
+          SHORT_SHA="${EXPECTED_SHA:0:7}"
+          if [ -z "$DEPLOYED_VERSION" ]; then
+            echo "WARNING: Could not extract version from health endpoint response"
+            echo "Full health response:"
+            curl -s "https://staging.properpos.com/api/v1/health" | jq .
+            exit 0
+          fi
+          if [[ "$DEPLOYED_VERSION" == *"$SHORT_SHA"* ]] || [[ "$DEPLOYED_VERSION" == "$EXPECTED_SHA" ]]; then
+            echo "PASS: Deployed version (${DEPLOYED_VERSION}) matches git SHA (${SHORT_SHA})"
+          else
+            echo "FAIL: Deployed version (${DEPLOYED_VERSION}) does not match git SHA (${SHORT_SHA})"
+            exit 1
+          fi
+
+  # Notify staging deployment
+  notify-staging:
+    name: Notify Staging Deployment
+    runs-on: ubuntu-latest
+    needs: smoke-test-staging
+    if: always()
+    steps:
+      - name: Notify deployment
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ needs.smoke-test-staging.result == 'success' && ':rocket: Deployed to staging successfully' || ':x: Staging deployment failed' }}: ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Deploy to production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://app.properpos.com
+    env:
+      ECS_CLUSTER: properpos-production
+      SERVICE_PREFIX: properpos-production
+      DEPLOY_ENV: production
+      HEALTH_URL: https://app.properpos.com/api/v1/health
+      FRONTEND_URL: https://app.properpos.com
+
+    strategy:
+      max-parallel: 3
+      matrix:
+        service:
+          - gateway
+          - auth
+          - tenant
+          - pos
+          - inventory
+          - analytics
+          - billing
+          - notification
+          - audit
+          - frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download current task definition
+        id: current-task-def
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} \
+            --query 'taskDefinition' \
+            --output json > current-task-def.json
+          CURRENT_REVISION=$(jq -r '.taskDefinitionArn' current-task-def.json)
+          echo "current_revision=${CURRENT_REVISION}" >> "$GITHUB_OUTPUT"
+
+      - name: Render new task definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: current-task-def.json
+          container-name: ${{ matrix.service }}
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+
+      - name: Deploy to ECS
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.SERVICE_PREFIX }}-${{ matrix.service }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+
+      - name: Health check verification
+        if: matrix.service == 'gateway'
+        run: |
+          echo "Waiting for gateway service to become healthy..."
+          MAX_ATTEMPTS=10
+          SLEEP_INTERVAL=15
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Health check attempt ${ATTEMPT}/${MAX_ATTEMPTS}..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.HEALTH_URL }}" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Health check passed with status ${HTTP_STATUS}"
+              exit 0
+            fi
+            echo "Health check returned status ${HTTP_STATUS}, retrying in ${SLEEP_INTERVAL}s..."
+            sleep $SLEEP_INTERVAL
+          done
+          echo "Health check failed after ${MAX_ATTEMPTS} attempts"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "Deployment health check failed. Rolling back to previous task definition..."
+          PREVIOUS_REVISION="${{ steps.current-task-def.outputs.current_revision }}"
+          echo "Rolling back service ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} to ${PREVIOUS_REVISION}"
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.SERVICE_PREFIX }}-${{ matrix.service }} \
+            --task-definition "${PREVIOUS_REVISION}" \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.SERVICE_PREFIX }}-${{ matrix.service }}
+          echo "Rollback completed for ${{ matrix.service }}"
+
+  # Smoke tests for production
+  smoke-test-production:
+    name: Smoke Tests (Production)
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    environment:
+      name: production
+      url: https://app.properpos.com
+    steps:
+      - name: Verify gateway health endpoint returns 200
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://app.properpos.com/api/v1/health")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FAIL: Gateway health endpoint returned ${HTTP_STATUS}, expected 200"
+            exit 1
+          fi
+          echo "PASS: Gateway health endpoint returned 200"
+
+      - name: Verify frontend returns 200
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://app.properpos.com")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "FAIL: Frontend returned ${HTTP_STATUS}, expected 200"
+            exit 1
+          fi
+          echo "PASS: Frontend returned 200"
+
+      - name: Verify deployed version matches git SHA
+        run: |
+          DEPLOYED_VERSION=$(curl -s "https://app.properpos.com/api/v1/health" | jq -r '.version // .sha // .commit // empty')
+          EXPECTED_SHA="${{ github.sha }}"
+          SHORT_SHA="${EXPECTED_SHA:0:7}"
+          if [ -z "$DEPLOYED_VERSION" ]; then
+            echo "WARNING: Could not extract version from health endpoint response"
+            echo "Full health response:"
+            curl -s "https://app.properpos.com/api/v1/health" | jq .
+            exit 0
+          fi
+          if [[ "$DEPLOYED_VERSION" == *"$SHORT_SHA"* ]] || [[ "$DEPLOYED_VERSION" == "$EXPECTED_SHA" ]]; then
+            echo "PASS: Deployed version (${DEPLOYED_VERSION}) matches git SHA (${SHORT_SHA})"
+          else
+            echo "FAIL: Deployed version (${DEPLOYED_VERSION}) does not match git SHA (${SHORT_SHA})"
+            exit 1
+          fi
+
+  # Notify production deployment
+  notify-production:
+    name: Notify Production Deployment
+    runs-on: ubuntu-latest
+    needs: smoke-test-production
+    if: always()
+    steps:
+      - name: Notify deployment
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ needs.smoke-test-production.result == 'success' && ':tada: Deployed to production successfully' || ':x: Production deployment failed' }}: ${{ github.sha }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true

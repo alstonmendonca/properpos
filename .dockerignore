@@ -1,0 +1,117 @@
+# Dependencies
+node_modules
+**/node_modules
+.npm
+.yarn
+.pnpm-store
+
+# Build outputs
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+build
+**/build
+.turbo
+
+# Development files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*.sublime-*
+.project
+.classpath
+.settings
+
+# OS
+.DS_Store
+Thumbs.db
+*.orig
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+.github
+
+# Docker
+Dockerfile*
+docker-compose*
+.docker
+.dockerignore
+
+# Test files
+coverage
+**/coverage
+**/*.test.ts
+**/*.spec.ts
+**/*.test.tsx
+**/*.spec.tsx
+__tests__
+**/__tests__
+**/__mocks__
+jest.config.*
+vitest.config.*
+cypress
+playwright
+
+# Documentation
+*.md
+!package.md
+docs
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
+AUDIT_CHECKLIST*
+
+# Misc
+.editorconfig
+.eslintrc*
+.eslintignore
+.prettierrc*
+.prettierignore
+.stylelintrc*
+.husky
+.commitlintrc*
+.lintstagedrc*
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+.npmrc
+.yarnrc*
+.nvmrc
+Makefile
+
+# Secrets (never include)
+*.pem
+*.key
+*.crt
+*.cert
+secrets/
+credentials/
+*.secrets
+
+# Temporary files
+tmp
+temp
+*.tmp
+*.temp
+.cache

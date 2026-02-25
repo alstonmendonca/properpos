@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ProperPOS</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .email-wrapper {
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      padding: 40px 30px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffffff;
+      margin: 0;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    h1 {
+      color: #1f2937;
+      font-size: 24px;
+      margin: 0 0 20px 0;
+    }
+    p {
+      color: #4b5563;
+      margin: 0 0 16px 0;
+    }
+    .button {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-weight: 600;
+      margin: 20px 0;
+    }
+    .button:hover {
+      opacity: 0.9;
+    }
+    .features {
+      background-color: #f9fafb;
+      padding: 24px;
+      border-radius: 8px;
+      margin: 24px 0;
+    }
+    .feature {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .feature:last-child {
+      margin-bottom: 0;
+    }
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      margin-right: 12px;
+      color: #6366f1;
+    }
+    .feature-text {
+      flex: 1;
+    }
+    .feature-title {
+      font-weight: 600;
+      color: #1f2937;
+      margin: 0;
+    }
+    .feature-desc {
+      color: #6b7280;
+      font-size: 14px;
+      margin: 4px 0 0 0;
+    }
+    .footer {
+      background-color: #f9fafb;
+      padding: 24px 30px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    .footer p {
+      color: #9ca3af;
+      font-size: 14px;
+      margin: 0;
+    }
+    .footer a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+    .social-links {
+      margin: 16px 0;
+    }
+    .social-links a {
+      display: inline-block;
+      margin: 0 8px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="email-wrapper">
+      <div class="header">
+        <h1 class="logo">ProperPOS</h1>
+      </div>
+      <div class="content">
+        <h1>Welcome to ProperPOS, {{userName}}! 🎉</h1>
+        <p>Thank you for choosing ProperPOS for your business. We're excited to help you streamline your operations and grow your business.</p>
+
+        <p>Your account has been created successfully. Here's your organization details:</p>
+        <ul>
+          <li><strong>Organization:</strong> {{organizationName}}</li>
+          <li><strong>Email:</strong> {{userEmail}}</li>
+          <li><strong>Plan:</strong> {{subscriptionPlan}}</li>
+        </ul>
+
+        <div style="text-align: center;">
+          <a href="{{dashboardUrl}}" class="button">Go to Dashboard</a>
+        </div>
+
+        <div class="features">
+          <h3 style="margin: 0 0 16px 0; color: #1f2937;">What you can do with ProperPOS:</h3>
+
+          <div class="feature">
+            <span class="feature-icon">📊</span>
+            <div class="feature-text">
+              <p class="feature-title">Point of Sale</p>
+              <p class="feature-desc">Process sales quickly with our intuitive POS interface</p>
+            </div>
+          </div>
+
+          <div class="feature">
+            <span class="feature-icon">📦</span>
+            <div class="feature-text">
+              <p class="feature-title">Inventory Management</p>
+              <p class="feature-desc">Track stock levels and automate reordering</p>
+            </div>
+          </div>
+
+          <div class="feature">
+            <span class="feature-icon">📈</span>
+            <div class="feature-text">
+              <p class="feature-title">Analytics & Reports</p>
+              <p class="feature-desc">Get insights into your business performance</p>
+            </div>
+          </div>
+
+          <div class="feature">
+            <span class="feature-icon">👥</span>
+            <div class="feature-text">
+              <p class="feature-title">Customer Management</p>
+              <p class="feature-desc">Build relationships with loyalty programs</p>
+            </div>
+          </div>
+        </div>
+
+        <p>Need help getting started? Check out our <a href="{{helpUrl}}">documentation</a> or contact our support team.</p>
+
+        <p>Best regards,<br><strong>The ProperPOS Team</strong></p>
+      </div>
+      <div class="footer">
+        <div class="social-links">
+          <a href="{{twitterUrl}}">Twitter</a>
+          <a href="{{linkedinUrl}}">LinkedIn</a>
+          <a href="{{facebookUrl}}">Facebook</a>
+        </div>
+        <p>© {{currentYear}} ProperPOS. All rights reserved.</p>
+        <p><a href="{{unsubscribeUrl}}">Unsubscribe</a> | <a href="{{privacyUrl}}">Privacy Policy</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

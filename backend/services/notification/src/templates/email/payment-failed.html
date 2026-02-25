@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Failed - ProperPOS</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .email-wrapper {
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      padding: 40px 30px;
+      text-align: center;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffffff;
+      margin: 0;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    h1 {
+      color: #1f2937;
+      font-size: 24px;
+      margin: 0 0 20px 0;
+    }
+    p {
+      color: #4b5563;
+      margin: 0 0 16px 0;
+    }
+    .button {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 14px 32px;
+      border-radius: 8px;
+      font-weight: 600;
+      margin: 20px 0;
+    }
+    .alert-box {
+      background-color: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+      text-align: center;
+    }
+    .alert-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+    .alert-title {
+      color: #991b1b;
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 8px 0;
+    }
+    .alert-text {
+      color: #b91c1c;
+      margin: 0;
+      font-size: 14px;
+    }
+    .info-box {
+      background-color: #f3f4f6;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 24px 0;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+    .info-label {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .info-value {
+      color: #1f2937;
+      font-weight: 500;
+    }
+    .steps {
+      margin: 24px 0;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .step-number {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+    .step-content {
+      flex: 1;
+    }
+    .step-title {
+      color: #1f2937;
+      font-weight: 600;
+      margin: 0;
+    }
+    .step-desc {
+      color: #6b7280;
+      font-size: 14px;
+      margin: 4px 0 0 0;
+    }
+    .footer {
+      background-color: #f9fafb;
+      padding: 24px 30px;
+      text-align: center;
+      border-top: 1px solid #e5e7eb;
+    }
+    .footer p {
+      color: #9ca3af;
+      font-size: 14px;
+      margin: 0;
+    }
+    .footer a {
+      color: #6366f1;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="email-wrapper">
+      <div class="header">
+        <h1 class="logo">ProperPOS</h1>
+      </div>
+      <div class="content">
+        <div class="alert-box">
+          <div class="alert-icon">⚠️</div>
+          <p class="alert-title">Payment Failed</p>
+          <p class="alert-text">We couldn't process your payment for this billing cycle.</p>
+        </div>
+
+        <h1>Action Required</h1>
+        <p>Hi {{userName}},</p>
+        <p>We attempted to charge your payment method for your ProperPOS subscription, but the payment was unsuccessful.</p>
+
+        <div class="info-box">
+          <div class="info-row">
+            <span class="info-label">Amount</span>
+            <span class="info-value">{{amount}}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Payment Method</span>
+            <span class="info-value">{{paymentMethod}}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Failure Reason</span>
+            <span class="info-value" style="color: #dc2626;">{{failureReason}}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Next Retry</span>
+            <span class="info-value">{{nextRetryDate}}</span>
+          </div>
+        </div>
+
+        <h3 style="margin: 24px 0 16px 0; color: #1f2937;">How to fix this:</h3>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <p class="step-title">Update your payment method</p>
+              <p class="step-desc">Add a new card or update your existing payment information</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <p class="step-title">Check your card details</p>
+              <p class="step-desc">Ensure your card hasn't expired and has sufficient funds</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <p class="step-title">Contact your bank</p>
+              <p class="step-desc">Your bank may have blocked the transaction for security reasons</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align: center;">
+          <a href="{{updatePaymentUrl}}" class="button">Update Payment Method</a>
+        </div>
+
+        <p style="background-color: #fef3c7; padding: 16px; border-radius: 8px; color: #92400e; font-size: 14px;">
+          <strong>⏰ Important:</strong> If payment is not received within {{gracePeriod}}, your account may be suspended and you'll lose access to your data.
+        </p>
+
+        <p>If you need assistance, our support team is here to help.</p>
+
+        <p>Best regards,<br><strong>The ProperPOS Billing Team</strong></p>
+      </div>
+      <div class="footer">
+        <p>© {{currentYear}} ProperPOS. All rights reserved.</p>
+        <p><a href="{{supportUrl}}">Contact Support</a> | <a href="{{billingPortalUrl}}">Manage Billing</a></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# ProperPOS - robots.txt
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /pos
+Disallow: /orders
+Disallow: /products
+Disallow: /customers
+Disallow: /inventory
+Disallow: /analytics
+Disallow: /settings
+Disallow: /billing
+Disallow: /api/
+
+Sitemap: https://properpos.com/sitemap.xml
