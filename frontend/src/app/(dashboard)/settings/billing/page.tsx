@@ -312,6 +312,11 @@ export default function BillingSettingsPage() {
                     variant={isCurrentPlan ? 'outline' : plan.popular ? 'default' : 'outline'}
                     className="w-full cursor-pointer"
                     disabled={isCurrentPlan}
+                    onClick={() => {
+                      if (!isCurrentPlan) {
+                        addToast({ type: 'info', title: 'Coming Soon', message: 'Plan upgrade coming soon' });
+                      }
+                    }}
                   >
                     {isCurrentPlan ? 'Current Plan' : 'Upgrade'}
                   </Button>
@@ -326,7 +331,7 @@ export default function BillingSettingsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Payment Methods</CardTitle>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => addToast({ type: 'info', title: 'Coming Soon', message: 'Payment method management coming soon' })}>
             <CreditCard className="w-4 h-4 mr-2" />
             Add Card
           </Button>

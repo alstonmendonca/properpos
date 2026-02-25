@@ -124,10 +124,31 @@ export default function RegisterPage() {
             We've sent a verification email to <strong className="text-foreground">{formData.email}</strong>.
             Please check your inbox and click the link to verify your account.
           </p>
-          <Button onClick={() => router.push('/login')} className="w-full cursor-pointer">
-            Go to Login
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
+          <div className="space-y-3">
+            <Button onClick={() => router.push('/login')} className="w-full cursor-pointer">
+              Go to Login
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full cursor-pointer"
+              onClick={() => {
+                setSuccess(false);
+                setFormData({
+                  firstName: '',
+                  lastName: '',
+                  email: '',
+                  password: '',
+                  confirmPassword: '',
+                  organizationName: '',
+                  businessType: '',
+                });
+                setFormError('');
+              }}
+            >
+              Try another email
+            </Button>
+          </div>
         </div>
       </div>
     );

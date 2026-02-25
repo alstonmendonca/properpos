@@ -205,6 +205,27 @@ export default function NewCustomerPage() {
         message: `${form.firstName} ${form.lastName} has been added`,
       });
 
+      setForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        address: {
+          street: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          country: 'United States',
+        },
+        notes: '',
+        tags: [],
+        status: 'active',
+        loyaltyEnabled: true,
+      });
+      setErrors({});
+      setTouched(new Set());
+      setNewTag('');
+
       router.push('/customers');
     } catch (error) {
       addToast({

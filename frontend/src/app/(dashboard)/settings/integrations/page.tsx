@@ -87,6 +87,9 @@ export default function IntegrationsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [configModal, setConfigModal] = useState<Integration | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [configApiKey, setConfigApiKey] = useState('');
+  const [configWebhookSecret, setConfigWebhookSecret] = useState('');
 
   useEffect(() => {
     setTimeout(() => setIsLoading(false), 500);
@@ -140,10 +143,13 @@ export default function IntegrationsPage() {
       });
       return;
     }
+    setConfigApiKey('');
+    setConfigWebhookSecret('');
     setConfigModal(integration);
   };
 
   const handleDisconnect = (integration: Integration) => {
+    if (!window.confirm('Are you sure you want to disconnect this integration?')) return;
     setIntegrations(prev => prev.map(i => {
       if (i.id !== integration.id) return i;
       const { lastSync, ...rest } = i;
@@ -328,7 +334,7 @@ export default function IntegrationsPage() {
                 <div className="flex items-center gap-2">
                   {integration.status === 'connected' ? (
                     <>
-                      <Button variant="outline" size="sm" className="flex-1 cursor-pointer" onClick={() => setConfigModal(integration)}>
+                      <Button variant="outline" size="sm" className="flex-1 cursor-pointer" onClick={() => { setConfigApiKey(''); setConfigWebhookSecret(''); setConfigModal(integration); }}>
                         <Settings className="w-4 h-4 mr-2" />
                         Configure
                       </Button>
@@ -342,7 +348,7 @@ export default function IntegrationsPage() {
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Reconnect
                       </Button>
-                      <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => setConfigModal(integration)}>
+                      <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => { setConfigApiKey(''); setConfigWebhookSecret(''); setConfigModal(integration); }}>
                         <Settings className="w-4 h-4" />
                       </Button>
                     </>
@@ -366,7 +372,7 @@ export default function IntegrationsPage() {
 
       {/* Config Modal */}
       {configModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setConfigModal(null)}>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { if (!connecting) setConfigModal(null); }}>
           <Card className="w-full max-w-md" onClick={e => e.stopPropagation()}>
             <CardHeader>
               <CardTitle>Configure {configModal.name}</CardTitle>
@@ -378,6 +384,8 @@ export default function IntegrationsPage() {
                   type="password"
                   className="w-full px-3 py-2 border rounded-lg bg-background border-border"
                   placeholder="Enter your API key"
+                  value={configApiKey}
+                  onChange={(e) => setConfigApiKey(e.target.value)}
                 />
               </div>
               {configModal.id === 'stripe' && (
@@ -387,19 +395,30 @@ export default function IntegrationsPage() {
                     type="password"
                     className="w-full px-3 py-2 border rounded-lg bg-background border-border"
                     placeholder="whsec_..."
+                    value={configWebhookSecret}
+                    onChange={(e) => setConfigWebhookSecret(e.target.value)}
                   />
                 </div>
               )}
               <div className="flex gap-2 pt-4">
-                <Button variant="outline" className="flex-1 cursor-pointer" onClick={() => setConfigModal(null)}>Cancel</Button>
-                <Button className="flex-1 cursor-pointer" onClick={() => {
-                  setIntegrations(prev => prev.map(i =>
-                    i.id === configModal.id ? { ...i, status: 'connected' as const, lastSync: new Date().toISOString() } : i
-                  ));
-                  addToast({ type: 'success', title: 'Connected', message: `${configModal.name} has been connected` });
-                  setConfigModal(null);
+                <Button variant="outline" className="flex-1 cursor-pointer" onClick={() => setConfigModal(null)} disabled={connecting}>Cancel</Button>
+                <Button className="flex-1 cursor-pointer" disabled={!configApiKey.trim() || connecting} onClick={async () => {
+                  setConnecting(true);
+                  try {
+                    // API call would go here
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    setIntegrations(prev => prev.map(i =>
+                      i.id === configModal.id ? { ...i, status: 'connected' as const, lastSync: new Date().toISOString() } : i
+                    ));
+                    addToast({ type: 'success', title: 'Connected', message: `${configModal.name} has been connected` });
+                    setConfigModal(null);
+                  } catch (error) {
+                    addToast({ type: 'error', title: 'Connection failed', message: 'Please check your credentials and try again' });
+                  } finally {
+                    setConnecting(false);
+                  }
                 }}>
-                  Save & Connect
+                  {connecting ? 'Connecting...' : 'Save & Connect'}
                 </Button>
               </div>
             </CardContent>

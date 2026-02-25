@@ -70,6 +70,7 @@ export default function POSPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
+  const [processingPayment, setProcessingPayment] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -169,11 +170,20 @@ export default function POSPage() {
     setShowPaymentModal(true);
   };
 
-  const handlePayment = (method: string) => {
-    toast.success('Payment Successful', `Order completed via ${method}`);
-    clearCart();
-    setShowPaymentModal(false);
-    setShowCartDrawer(false);
+  const handlePayment = async (method: string) => {
+    setProcessingPayment(true);
+    try {
+      // API call would go here
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast.success('Payment Successful', `Order completed via ${method}`);
+      clearCart();
+      setShowPaymentModal(false);
+      setShowCartDrawer(false);
+    } catch (error) {
+      toast.error('Payment Failed', 'Payment failed. Please try again.');
+    } finally {
+      setProcessingPayment(false);
+    }
   };
 
   const CartPanel = () => (
@@ -494,8 +504,9 @@ export default function POSPage() {
             <div className="flex items-center justify-between p-5 border-b border-border">
               <h2 className="text-lg font-semibold">Payment</h2>
               <button
-                onClick={() => setShowPaymentModal(false)}
-                className="p-1.5 hover:bg-accent rounded-lg transition-colors cursor-pointer"
+                onClick={() => { if (!processingPayment) setShowPaymentModal(false); }}
+                className={cn("p-1.5 hover:bg-accent rounded-lg transition-colors", processingPayment ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer')}
+                disabled={processingPayment}
                 aria-label="Close payment modal"
               >
                 <X className="w-4 h-4" />
@@ -516,8 +527,12 @@ export default function POSPage() {
                 ].map(({ method, icon: Icon, color, bg, desc }) => (
                   <button
                     key={method}
-                    className="w-full flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent transition-all duration-200 cursor-pointer group"
+                    className={cn(
+                      "w-full flex items-center gap-4 p-4 rounded-xl border border-border bg-card transition-all duration-200 group",
+                      processingPayment ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent cursor-pointer'
+                    )}
                     onClick={() => handlePayment(method)}
+                    disabled={processingPayment}
                   >
                     <div className={cn('p-2.5 rounded-xl', bg)}>
                       <Icon className={cn('w-5 h-5', color)} />

@@ -357,6 +357,7 @@ function LocationModal({ location, onClose, onSave }: LocationModalProps) {
     }
   );
   const [activeTab, setActiveTab] = useState<'basic' | 'hours'>('basic');
+  const [saving, setSaving] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -384,9 +385,36 @@ function LocationModal({ location, onClose, onSave }: LocationModalProps) {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const initialForm: Partial<Location> = {
+    name: '',
+    address: { street: '', city: '', state: '', zipCode: '', country: 'United States' },
+    phone: '',
+    email: '',
+    businessHours: {
+      monday: { open: '09:00', close: '21:00', closed: false },
+      tuesday: { open: '09:00', close: '21:00', closed: false },
+      wednesday: { open: '09:00', close: '21:00', closed: false },
+      thursday: { open: '09:00', close: '21:00', closed: false },
+      friday: { open: '09:00', close: '22:00', closed: false },
+      saturday: { open: '10:00', close: '22:00', closed: false },
+      sunday: { open: '10:00', close: '20:00', closed: false },
+    },
+    status: 'active',
+    manager: '',
+    staffCount: 0,
+    createdAt: new Date().toISOString(),
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form as Location);
+    setSaving(true);
+    try {
+      await onSave(form as Location);
+      setForm(initialForm);
+      setActiveTab('basic');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -606,8 +634,8 @@ function LocationModal({ location, onClose, onSave }: LocationModalProps) {
               <Button type="button" variant="outline" className="flex-1 cursor-pointer" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" className="flex-1 cursor-pointer">
-                {location ? 'Save Changes' : 'Create Location'}
+              <Button type="submit" className="flex-1 cursor-pointer" disabled={saving}>
+                {saving ? 'Saving...' : (location ? 'Save Changes' : 'Create Location')}
               </Button>
             </div>
           </form>

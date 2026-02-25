@@ -296,6 +296,27 @@ export default function NewProductPage() {
         message: `${form.name} has been added to your catalog`,
       });
 
+      setForm({
+        name: '',
+        sku: '',
+        description: '',
+        category: '',
+        price: '',
+        cost: '',
+        taxRate: '0',
+        stock: '0',
+        minStock: '10',
+        barcode: '',
+        unit: 'piece',
+        status: 'active',
+        trackInventory: true,
+        allowNegativeStock: false,
+        variants: [],
+        modifiers: [],
+      });
+      setErrors({});
+      setTouched(new Set());
+
       router.push('/products');
     } catch (error) {
       addToast({

@@ -48,6 +48,7 @@ export default function UsersSettingsPage() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('cashier');
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   useEffect(() => {
     // Mock data fetch
@@ -113,6 +114,7 @@ export default function UsersSettingsPage() {
   const handleInvite = async () => {
     if (!inviteEmail) return;
 
+    setInviteLoading(true);
     try {
       // API call would go here
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -132,6 +134,8 @@ export default function UsersSettingsPage() {
         title: 'Failed to send invitation',
         message: 'Please try again',
       });
+    } finally {
+      setInviteLoading(false);
     }
   };
 
@@ -342,9 +346,9 @@ export default function UsersSettingsPage() {
                 <Button variant="outline" className="flex-1 cursor-pointer" onClick={() => setInviteModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button className="flex-1 cursor-pointer" onClick={handleInvite} disabled={!inviteEmail}>
+                <Button className="flex-1 cursor-pointer" onClick={handleInvite} disabled={!inviteEmail || inviteLoading}>
                   <Mail className="w-4 h-4 mr-2" />
-                  Send Invitation
+                  {inviteLoading ? 'Sending...' : 'Send Invitation'}
                 </Button>
               </div>
             </CardContent>

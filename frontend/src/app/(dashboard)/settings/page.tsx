@@ -45,6 +45,7 @@ export default function SettingsPage() {
   const addToast = useUIStore(s => s.addToast);
   const [activeSection, setActiveSection] = useState('general');
   const [isLoading, setIsLoading] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   const [settings, setSettings] = useState<OrganizationSettings>({
     name: tenant?.name || '',
@@ -78,6 +79,8 @@ export default function SettingsPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
 
+    setHasChanges(true);
+
     if (name.startsWith('address.')) {
       const addressField = name.split('.')[1] as string;
       setSettings(prev => ({
@@ -100,6 +103,7 @@ export default function SettingsPage() {
         title: 'Settings saved',
         message: 'Your changes have been saved successfully',
       });
+      setHasChanges(false);
     } catch (error) {
       addToast({
         type: 'error',
@@ -328,7 +332,10 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              <div className="flex justify-end">
+              <div className="flex items-center justify-end gap-3">
+                {hasChanges && (
+                  <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
+                )}
                 <Button onClick={handleSave} disabled={isLoading}>
                   <Save className="w-4 h-4 mr-2" />
                   {isLoading ? 'Saving...' : 'Save Changes'}
@@ -384,7 +391,10 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-4">
+                <div className="flex items-center justify-end gap-3 pt-4">
+                  {hasChanges && (
+                    <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
+                  )}
                   <Button onClick={handleSave} disabled={isLoading}>
                     <Save className="w-4 h-4 mr-2" />
                     Save Changes
@@ -468,7 +478,10 @@ export default function SettingsPage() {
                   </select>
                 </div>
 
-                <div className="flex justify-end pt-4">
+                <div className="flex items-center justify-end gap-3 pt-4">
+                  {hasChanges && (
+                    <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
+                  )}
                   <Button onClick={handleSave} disabled={isLoading}>
                     <Save className="w-4 h-4 mr-2" />
                     Save Changes
@@ -530,7 +543,10 @@ export default function SettingsPage() {
                   </label>
                 </div>
 
-                <div className="flex justify-end pt-4">
+                <div className="flex items-center justify-end gap-3 pt-4">
+                  {hasChanges && (
+                    <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
+                  )}
                   <Button onClick={handleSave} disabled={isLoading}>
                     <Save className="w-4 h-4 mr-2" />
                     Save Changes

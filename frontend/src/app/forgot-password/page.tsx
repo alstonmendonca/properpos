@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
             Please check your inbox and follow the link to reset your password.
           </p>
           <div className="space-y-3">
-            <Button onClick={() => setSuccess(false)} variant="outline" className="w-full cursor-pointer">
+            <Button onClick={() => { setSuccess(false); setEmail(''); }} variant="outline" className="w-full cursor-pointer">
               Try another email
             </Button>
             <Link href="/login">
