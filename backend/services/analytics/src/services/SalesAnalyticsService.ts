@@ -795,8 +795,6 @@ export class SalesAnalyticsService {
     topExitPoints: Array<{ step: string; exits: number; rate: number }>;
   }> {
     try {
-      // This is a placeholder implementation
-      // In a real system, you'd track user sessions and cart abandonment
       const db = await this.getDb(tenantId);
       const ordersCollection = db.collection<Order>('orders');
 
@@ -821,10 +819,54 @@ export class SalesAnalyticsService {
         status: 'cancelled'
       });
 
-      // Placeholder calculations
-      const totalSessions = Math.floor(totalOrders * 1.5); // Estimate based on orders
-      const conversionRate = totalSessions > 0 ? (completedOrders / totalSessions) * 100 : 0;
+      // Each order represents a session/attempt
+      const totalSessions = totalOrders;
+      const conversionRate = totalOrders > 0 ? (completedOrders / totalOrders) * 100 : 0;
       const abandonmentRate = totalOrders > 0 ? (cancelledOrders / totalOrders) * 100 : 0;
+
+      // Compute average session value from completed orders
+      const avgValuePipeline = [
+        {
+          $match: {
+            ...baseQuery,
+            status: { $in: ['completed', 'paid'] }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            avgValue: { $avg: '$total' }
+          }
+        }
+      ];
+
+      const [avgResult] = await ordersCollection.aggregate(avgValuePipeline).toArray();
+      const averageSessionValue = avgResult ? parseFloat(new Decimal(avgResult.avgValue).toFixed(2)) : 0;
+
+      // Compute top exit points from cancelled orders grouped by cancellation reason
+      const exitPointsPipeline = [
+        {
+          $match: {
+            ...baseQuery,
+            status: 'cancelled'
+          }
+        },
+        {
+          $group: {
+            _id: { $ifNull: ['$cancellationReason', 'Unknown'] },
+            exits: { $sum: 1 }
+          }
+        },
+        { $sort: { exits: -1 as const } },
+        { $limit: 10 }
+      ];
+
+      const exitPointsResults = await ordersCollection.aggregate(exitPointsPipeline).toArray();
+      const topExitPoints = exitPointsResults.map((ep: any) => ({
+        step: ep._id as string,
+        exits: ep.exits as number,
+        rate: cancelledOrders > 0 ? parseFloat(((ep.exits / cancelledOrders) * 100).toFixed(2)) : 0,
+      }));
 
       return {
         totalSessions,
@@ -832,8 +874,8 @@ export class SalesAnalyticsService {
         conversionRate: parseFloat(conversionRate.toFixed(2)),
         abandonedCarts: cancelledOrders,
         abandonmentRate: parseFloat(abandonmentRate.toFixed(2)),
-        averageSessionValue: 0, // Would need session tracking
-        topExitPoints: [], // Would need detailed session tracking
+        averageSessionValue,
+        topExitPoints,
       };
 
     } catch (error) {

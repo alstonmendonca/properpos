@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Settings,
@@ -16,11 +16,14 @@ import {
   ChevronRight,
   Save,
   Upload,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthStore, useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface OrganizationSettings {
   name: string;
@@ -40,29 +43,99 @@ interface OrganizationSettings {
   taxId: string;
 }
 
+interface AppearanceSettings {
+  theme: 'light' | 'dark' | 'system';
+  primaryColor: string;
+}
+
+interface ReceiptSettings {
+  headerText: string;
+  footerText: string;
+  showLogo: boolean;
+  showTaxBreakdown: boolean;
+  autoPrint: boolean;
+  emailByDefault: boolean;
+}
+
 export default function SettingsPage() {
   const tenant = useAuthStore(s => s.tenant);
   const addToast = useUIStore(s => s.addToast);
+  const currentTheme = useUIStore(s => s.theme);
+  const setTheme = useUIStore(s => s.setTheme);
   const [activeSection, setActiveSection] = useState('general');
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingAppearance, setSavingAppearance] = useState(false);
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [settings, setSettings] = useState<OrganizationSettings>({
     name: tenant?.name || '',
-    email: 'contact@restaurant.com',
-    phone: '+1 (555) 123-4567',
-    website: 'www.restaurant.com',
+    email: '',
+    phone: '',
+    website: '',
     address: {
-      street: '123 Main Street',
-      city: 'New York',
-      state: 'NY',
-      zipCode: '10001',
+      street: '',
+      city: '',
+      state: '',
+      zipCode: '',
       country: 'United States',
     },
     timezone: 'America/New_York',
     currency: 'USD',
     taxId: '',
   });
+
+  const [appearance, setAppearance] = useState<AppearanceSettings>({
+    theme: (currentTheme as 'light' | 'dark' | 'system') || 'system',
+    primaryColor: '#6366f1',
+  });
+
+  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>({
+    headerText: '',
+    footerText: 'Thank you for your purchase!',
+    showLogo: true,
+    showTaxBreakdown: true,
+    autoPrint: true,
+    emailByDefault: false,
+  });
+
+  // Fetch settings from API on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      setIsFetching(true);
+      try {
+        const response = await apiClient.get('/tenants/current/settings');
+        const data = (response.data as any)?.data || response.data;
+        if (data) {
+          // Populate organization settings
+          setSettings(prev => ({
+            ...prev,
+            ...data,
+            address: { ...prev.address, ...(data.address || {}) },
+          }));
+          // Populate appearance settings if present
+          if (data.appearance) {
+            setAppearance(prev => ({ ...prev, ...data.appearance }));
+            if (data.appearance.theme) {
+              setTheme(data.appearance.theme);
+            }
+          }
+          // Populate receipt settings if present
+          if (data.receipts) {
+            setReceiptSettings(prev => ({ ...prev, ...data.receipts }));
+          }
+        }
+      } catch {
+        // Fall back to defaults if settings not yet configured
+      } finally {
+        setIsFetching(false);
+      }
+    };
+    loadSettings();
+  }, [setTheme]);
 
   const sections = [
     { id: 'general', label: 'General', icon: Building2, description: 'Basic organization information' },
@@ -92,11 +165,11 @@ export default function SettingsPage() {
     }
   };
 
+  // --- Save General / Localization Settings ---
   const handleSave = async () => {
     setIsLoading(true);
     try {
-      // API call would go here
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await apiClient.put('/tenants/current/settings', settings);
 
       addToast({
         type: 'success',
@@ -104,16 +177,150 @@ export default function SettingsPage() {
         message: 'Your changes have been saved successfully',
       });
       setHasChanges(false);
-    } catch (error) {
+    } catch (error: any) {
       addToast({
         type: 'error',
         title: 'Failed to save settings',
-        message: 'Please try again',
+        message: error.message || 'Please try again',
       });
     } finally {
       setIsLoading(false);
     }
   };
+
+  // --- Upload Logo ---
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      addToast({
+        type: 'error',
+        title: 'Invalid file type',
+        message: 'Please upload a PNG, JPG, or WebP image.',
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      addToast({
+        type: 'error',
+        title: 'File too large',
+        message: 'Logo must be less than 5MB.',
+      });
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const uploadResult = await apiClient.uploadFile(file, 'logos');
+      const logoUrl = uploadResult.url || uploadResult.path;
+
+      // Save the logo URL to settings
+      await apiClient.put('/tenants/current/settings', { ...settings, logo: logoUrl });
+
+      setSettings(prev => ({ ...prev, logo: logoUrl }));
+      addToast({
+        type: 'success',
+        title: 'Logo uploaded',
+        message: 'Your logo has been updated successfully.',
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Upload failed',
+        message: error.message || 'Could not upload the logo. Please try again.',
+      });
+    } finally {
+      setUploadingLogo(false);
+      // Reset file input
+      if (logoInputRef.current) {
+        logoInputRef.current.value = '';
+      }
+    }
+  };
+
+  // --- Save Theme ---
+  const handleThemeSelect = (selectedTheme: 'light' | 'dark' | 'system') => {
+    setAppearance(prev => ({ ...prev, theme: selectedTheme }));
+    setTheme(selectedTheme);
+    setHasChanges(true);
+  };
+
+  // --- Save Primary Color ---
+  const handleColorSelect = (color: string) => {
+    setAppearance(prev => ({ ...prev, primaryColor: color }));
+    setHasChanges(true);
+  };
+
+  // --- Save Appearance ---
+  const handleSaveAppearance = async () => {
+    setSavingAppearance(true);
+    try {
+      await apiClient.put('/tenants/current/settings', {
+        appearance,
+      });
+
+      addToast({
+        type: 'success',
+        title: 'Appearance saved',
+        message: 'Theme and branding settings have been updated.',
+      });
+      setHasChanges(false);
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to save appearance',
+        message: error.message || 'Please try again.',
+      });
+    } finally {
+      setSavingAppearance(false);
+    }
+  };
+
+  // --- Save Receipt Settings ---
+  const handleSaveReceipts = async () => {
+    setIsLoading(true);
+    try {
+      await apiClient.put('/tenants/current/settings', {
+        receipts: receiptSettings,
+      });
+
+      addToast({
+        type: 'success',
+        title: 'Receipt settings saved',
+        message: 'Your receipt preferences have been updated.',
+      });
+      setHasChanges(false);
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to save receipt settings',
+        message: error.message || 'Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isFetching) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your organization settings and preferences
+          </p>
+        </div>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -179,16 +386,40 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                   {/* Logo Upload */}
                   <div className="flex items-center gap-6">
-                    <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center">
-                      <Building2 className="w-10 h-10 text-muted-foreground" />
+                    <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center overflow-hidden">
+                      {settings.logo ? (
+                        <img
+                          src={settings.logo}
+                          alt="Organization logo"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Building2 className="w-10 h-10 text-muted-foreground" />
+                      )}
                     </div>
                     <div>
-                      <Button variant="outline" size="sm">
-                        <Upload className="w-4 h-4 mr-2" />
-                        Upload Logo
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={uploadingLogo}
+                        onClick={() => logoInputRef.current?.click()}
+                      >
+                        {uploadingLogo ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="w-4 h-4 mr-2" />
+                        )}
+                        {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
                       </Button>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Recommended: 200x200px, PNG or JPG
+                        Recommended: 200x200px, PNG or JPG (max 5MB)
                       </p>
                     </div>
                   </div>
@@ -337,7 +568,11 @@ export default function SettingsPage() {
                   <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
                 )}
                 <Button onClick={handleSave} disabled={isLoading}>
-                  <Save className="w-4 h-4 mr-2" />
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
                   {isLoading ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
@@ -356,21 +591,27 @@ export default function SettingsPage() {
                     Theme
                   </label>
                   <div className="grid grid-cols-3 gap-4">
-                    {['light', 'dark', 'system'].map(theme => (
+                    {(['light', 'dark', 'system'] as const).map(themeOption => (
                       <button
-                        key={theme}
+                        key={themeOption}
+                        onClick={() => handleThemeSelect(themeOption)}
                         className={cn(
-                          'p-4 border rounded-lg text-center transition-colors',
-                          'border-border hover:border-primary cursor-pointer'
+                          'p-4 border rounded-lg text-center transition-colors cursor-pointer',
+                          appearance.theme === themeOption
+                            ? 'border-primary ring-2 ring-primary/30'
+                            : 'border-border hover:border-primary'
                         )}
                       >
                         <div className={cn(
                           'w-12 h-12 mx-auto rounded-lg mb-2',
-                          theme === 'light' ? 'bg-white border border-gray-200' :
-                          theme === 'dark' ? 'bg-gray-900' :
+                          themeOption === 'light' ? 'bg-white border border-gray-200' :
+                          themeOption === 'dark' ? 'bg-gray-900' :
                           'bg-gradient-to-br from-white to-gray-900'
                         )} />
-                        <span className="text-sm font-medium capitalize">{theme}</span>
+                        <span className="text-sm font-medium capitalize">{themeOption}</span>
+                        {appearance.theme === themeOption && (
+                          <Check className="w-4 h-4 mx-auto mt-1 text-primary" />
+                        )}
                       </button>
                     ))}
                   </div>
@@ -384,7 +625,13 @@ export default function SettingsPage() {
                     {['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'].map(color => (
                       <button
                         key={color}
-                        className="w-8 h-8 rounded-full border-2 border-white shadow-md cursor-pointer"
+                        onClick={() => handleColorSelect(color)}
+                        className={cn(
+                          'w-8 h-8 rounded-full border-2 shadow-md cursor-pointer transition-transform',
+                          appearance.primaryColor === color
+                            ? 'border-foreground scale-125 ring-2 ring-primary/30'
+                            : 'border-white hover:scale-110'
+                        )}
                         style={{ backgroundColor: color }}
                       />
                     ))}
@@ -395,9 +642,13 @@ export default function SettingsPage() {
                   {hasChanges && (
                     <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
                   )}
-                  <Button onClick={handleSave} disabled={isLoading}>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
+                  <Button onClick={handleSaveAppearance} disabled={savingAppearance}>
+                    {savingAppearance ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {savingAppearance ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </CardContent>
@@ -483,8 +734,12 @@ export default function SettingsPage() {
                     <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
                   )}
                   <Button onClick={handleSave} disabled={isLoading}>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {isLoading ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </CardContent>
@@ -504,6 +759,11 @@ export default function SettingsPage() {
                   </label>
                   <textarea
                     rows={3}
+                    value={receiptSettings.headerText}
+                    onChange={(e) => {
+                      setReceiptSettings(prev => ({ ...prev, headerText: e.target.value }));
+                      setHasChanges(true);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
                     placeholder="Text that appears at the top of receipts"
                   />
@@ -515,9 +775,13 @@ export default function SettingsPage() {
                   </label>
                   <textarea
                     rows={3}
+                    value={receiptSettings.footerText}
+                    onChange={(e) => {
+                      setReceiptSettings(prev => ({ ...prev, footerText: e.target.value }));
+                      setHasChanges(true);
+                    }}
                     className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
                     placeholder="Thank you message, return policy, etc."
-                    defaultValue="Thank you for your purchase!"
                   />
                 </div>
 
@@ -526,19 +790,51 @@ export default function SettingsPage() {
                     Receipt Options
                   </label>
                   <label className="flex items-center gap-3">
-                    <input type="checkbox" defaultChecked className="rounded border-input cursor-pointer" />
+                    <input
+                      type="checkbox"
+                      checked={receiptSettings.showLogo}
+                      onChange={(e) => {
+                        setReceiptSettings(prev => ({ ...prev, showLogo: e.target.checked }));
+                        setHasChanges(true);
+                      }}
+                      className="rounded border-input cursor-pointer"
+                    />
                     <span className="text-sm text-foreground">Show logo on receipt</span>
                   </label>
                   <label className="flex items-center gap-3">
-                    <input type="checkbox" defaultChecked className="rounded border-input cursor-pointer" />
+                    <input
+                      type="checkbox"
+                      checked={receiptSettings.showTaxBreakdown}
+                      onChange={(e) => {
+                        setReceiptSettings(prev => ({ ...prev, showTaxBreakdown: e.target.checked }));
+                        setHasChanges(true);
+                      }}
+                      className="rounded border-input cursor-pointer"
+                    />
                     <span className="text-sm text-foreground">Show tax breakdown</span>
                   </label>
                   <label className="flex items-center gap-3">
-                    <input type="checkbox" defaultChecked className="rounded border-input cursor-pointer" />
+                    <input
+                      type="checkbox"
+                      checked={receiptSettings.autoPrint}
+                      onChange={(e) => {
+                        setReceiptSettings(prev => ({ ...prev, autoPrint: e.target.checked }));
+                        setHasChanges(true);
+                      }}
+                      className="rounded border-input cursor-pointer"
+                    />
                     <span className="text-sm text-foreground">Print automatically after payment</span>
                   </label>
                   <label className="flex items-center gap-3">
-                    <input type="checkbox" className="rounded border-input cursor-pointer" />
+                    <input
+                      type="checkbox"
+                      checked={receiptSettings.emailByDefault}
+                      onChange={(e) => {
+                        setReceiptSettings(prev => ({ ...prev, emailByDefault: e.target.checked }));
+                        setHasChanges(true);
+                      }}
+                      className="rounded border-input cursor-pointer"
+                    />
                     <span className="text-sm text-foreground">Email receipt by default</span>
                   </label>
                 </div>
@@ -547,9 +843,13 @@ export default function SettingsPage() {
                   {hasChanges && (
                     <span className="text-sm text-amber-600 dark:text-amber-400">Unsaved changes</span>
                   )}
-                  <Button onClick={handleSave} disabled={isLoading}>
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Changes
+                  <Button onClick={handleSaveReceipts} disabled={isLoading}>
+                    {isLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    {isLoading ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </div>
               </CardContent>

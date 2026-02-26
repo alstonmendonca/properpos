@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Search,
@@ -64,6 +64,26 @@ export default function OrdersPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
+  // Action loading states
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
+  const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState<string | null>(null);
+  const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
+
+  // Status update dropdown
+  const [statusDropdownOrderId, setStatusDropdownOrderId] = useState<string | null>(null);
+  const statusDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close status dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(event.target as Node)) {
+        setStatusDropdownOrderId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Calculate date range for API query
   const getDateRangeParams = useCallback(() => {
@@ -142,7 +162,6 @@ export default function OrdersPage() {
         setOrders([]);
       }
     } catch (error) {
-      console.error('Failed to fetch orders:', error);
       toast.error('Failed to load orders', 'Please try again later.');
       setOrders([]);
     } finally {
@@ -153,6 +172,188 @@ export default function OrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  // --- Print Receipt ---
+  const handlePrintReceipt = async (orderId: string) => {
+    setPrintingOrderId(orderId);
+    try {
+      const response = await apiClient.get<{ html?: string; receiptUrl?: string }>(`/orders/${orderId}/receipt`);
+      const data = response.data;
+
+      // Open a print window with the receipt content
+      const printWindow = window.open('', '_blank', 'width=400,height=600');
+      if (printWindow) {
+        if (data?.html) {
+          printWindow.document.write(data.html);
+        } else if (data?.receiptUrl) {
+          printWindow.location.href = data.receiptUrl;
+        } else {
+          // Fallback: generate a basic receipt from order data
+          const order = orders.find(o => o.id === orderId) || selectedOrder;
+          if (order) {
+            const receiptHtml = generateReceiptHtml(order);
+            printWindow.document.write(receiptHtml);
+          }
+        }
+        printWindow.document.close();
+        printWindow.focus();
+        // Give the content time to render before printing
+        setTimeout(() => {
+          printWindow.print();
+        }, 250);
+      } else {
+        toast.warning('Pop-up blocked', 'Please allow pop-ups to print receipts.');
+      }
+      toast.success('Receipt ready', 'The print dialog should open shortly.');
+    } catch (error: any) {
+      // Fallback: try to print from local data
+      const order = orders.find(o => o.id === orderId) || selectedOrder;
+      if (order) {
+        const printWindow = window.open('', '_blank', 'width=400,height=600');
+        if (printWindow) {
+          printWindow.document.write(generateReceiptHtml(order));
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => printWindow.print(), 250);
+        }
+      } else {
+        toast.error('Print failed', error.message || 'Could not generate receipt.');
+      }
+    } finally {
+      setPrintingOrderId(null);
+    }
+  };
+
+  // Generate a basic receipt HTML from order data
+  const generateReceiptHtml = (order: Order): string => {
+    const itemsHtml = order.items.map(item =>
+      `<tr>
+        <td style="padding:4px 0">${item.name}</td>
+        <td style="padding:4px 8px;text-align:center">${item.quantity}</td>
+        <td style="padding:4px 0;text-align:right">$${(item.price * item.quantity).toFixed(2)}</td>
+      </tr>`
+    ).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head><title>Receipt - ${order.orderNumber}</title>
+<style>
+  body { font-family: monospace; max-width: 300px; margin: 0 auto; padding: 20px; font-size: 12px; }
+  h2 { text-align: center; margin-bottom: 4px; }
+  .divider { border-top: 1px dashed #333; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  .total { font-weight: bold; font-size: 14px; }
+  .footer { text-align: center; margin-top: 16px; font-size: 11px; color: #666; }
+</style>
+</head>
+<body>
+  <h2>Receipt</h2>
+  <p style="text-align:center">Order: ${order.orderNumber}</p>
+  <p style="text-align:center">${new Date(order.createdAt).toLocaleString()}</p>
+  <div class="divider"></div>
+  <p><strong>Customer:</strong> ${order.customer.name}</p>
+  <div class="divider"></div>
+  <table>
+    <thead><tr><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:right">Total</th></tr></thead>
+    <tbody>${itemsHtml}</tbody>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr><td>Subtotal</td><td style="text-align:right">$${order.subtotal.toFixed(2)}</td></tr>
+    <tr><td>Tax</td><td style="text-align:right">$${order.tax.toFixed(2)}</td></tr>
+    ${order.discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">-$${order.discount.toFixed(2)}</td></tr>` : ''}
+    <tr class="total"><td>Total</td><td style="text-align:right">$${order.total.toFixed(2)}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <p>Payment: ${order.paymentMethod.toUpperCase()} - ${order.paymentStatus.toUpperCase()}</p>
+  <p class="footer">Thank you for your purchase!</p>
+</body>
+</html>`;
+  };
+
+  // --- Update Status ---
+  const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingStatusOrderId(orderId);
+    setStatusDropdownOrderId(null);
+    try {
+      await apiClient.put(`/orders/${orderId}/status`, { status: newStatus });
+      toast.success('Status updated', `Order status changed to "${newStatus}".`);
+
+      // Update the order in local state
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, status: newStatus as Order['status'] } : o
+      ));
+
+      // Update selected order if it's the same one
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => prev ? { ...prev, status: newStatus as Order['status'] } : null);
+      }
+    } catch (error: any) {
+      toast.error('Status update failed', error.message || 'Could not update the order status. Please try again.');
+    } finally {
+      setUpdatingStatusOrderId(null);
+    }
+  };
+
+  // --- Refund Order ---
+  const handleRefundOrder = async (orderId: string) => {
+    const order = orders.find(o => o.id === orderId) || selectedOrder;
+    const orderLabel = order?.orderNumber || orderId;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to refund order ${orderLabel} ($${order?.total.toFixed(2) || '?'})? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const reason = window.prompt('Enter refund reason (optional):') || 'Customer requested refund';
+
+    setRefundingOrderId(orderId);
+    try {
+      await apiClient.post(`/orders/${orderId}/refund`, { reason });
+      toast.success('Refund processed', `Order ${orderLabel} has been refunded.`);
+
+      // Update local state
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, status: 'refunded' as const, paymentStatus: 'refunded' as const } : o
+      ));
+
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => prev ? { ...prev, status: 'refunded', paymentStatus: 'refunded' } : null);
+      }
+    } catch (error: any) {
+      toast.error('Refund failed', error.message || 'Could not process the refund. Please try again.');
+    } finally {
+      setRefundingOrderId(null);
+    }
+  };
+
+  // --- Export All Orders ---
+  const handleExportOrders = async () => {
+    try {
+      const dateParams = getDateRangeParams();
+      const query: any = {
+        ...dateParams,
+        format: 'csv',
+      };
+      if (selectedStatus !== 'all') query.status = selectedStatus;
+      if (selectedPayment !== 'all') query.paymentMethod = selectedPayment;
+
+      const response = await apiClient.get<string>('/orders/export', { params: query });
+      const csvData = response.data || '';
+      const blob = new Blob([csvData], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `orders-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Export complete', 'Orders exported successfully.');
+    } catch (error: any) {
+      toast.error('Export failed', error.message || 'Could not export orders. Please try again.');
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -223,7 +424,6 @@ export default function OrdersPage() {
       setSelectedOrders([]);
       fetchOrders();
     } catch (error) {
-      console.error('Bulk status update failed:', error);
       toast.error('Status update failed', 'Could not update the selected orders. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -248,7 +448,6 @@ export default function OrdersPage() {
       setSelectedOrders([]);
       fetchOrders();
     } catch (error) {
-      console.error('Bulk cancel failed:', error);
       toast.error('Cancellation failed', 'Could not cancel the selected orders. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -274,7 +473,6 @@ export default function OrdersPage() {
       toast.success('Export complete', `Exported ${selectedOrders.length} orders.`);
       setSelectedOrders([]);
     } catch (error) {
-      console.error('Bulk export failed:', error);
       toast.error('Export failed', 'Could not export the selected orders. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -327,6 +525,19 @@ export default function OrdersPage() {
     revenue: orders.filter(o => o.paymentStatus === 'paid').reduce((sum, o) => sum + o.total, 0),
   };
 
+  // Valid next statuses for order status transitions
+  const getNextStatuses = (currentStatus: string): string[] => {
+    switch (currentStatus) {
+      case 'pending': return ['preparing', 'ready', 'completed', 'cancelled'];
+      case 'preparing': return ['ready', 'completed', 'cancelled'];
+      case 'ready': return ['completed', 'cancelled'];
+      case 'completed': return [];
+      case 'cancelled': return [];
+      case 'refunded': return [];
+      default: return [];
+    }
+  };
+
   if (isLoading) {
     return <SkeletonOrders />;
   }
@@ -342,7 +553,7 @@ export default function OrdersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleExportOrders}>
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
@@ -568,15 +779,91 @@ export default function OrdersPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <button className="p-1 hover:bg-accent rounded">
+                          <button
+                            className="p-1 hover:bg-accent rounded"
+                            title="View Details"
+                            onClick={() => setSelectedOrder(order)}
+                          >
                             <Eye className="w-4 h-4 text-muted-foreground" />
                           </button>
-                          <button className="p-1 hover:bg-accent rounded">
-                            <Printer className="w-4 h-4 text-muted-foreground" />
+                          <button
+                            className="p-1 hover:bg-accent rounded"
+                            title="Print Receipt"
+                            disabled={printingOrderId === order.id}
+                            onClick={() => handlePrintReceipt(order.id)}
+                          >
+                            {printingOrderId === order.id ? (
+                              <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                            ) : (
+                              <Printer className="w-4 h-4 text-muted-foreground" />
+                            )}
                           </button>
-                          <button className="p-1 hover:bg-accent rounded">
-                            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                          </button>
+                          <div className="relative">
+                            <button
+                              className="p-1 hover:bg-accent rounded"
+                              title="More Actions"
+                              onClick={() => setStatusDropdownOrderId(
+                                statusDropdownOrderId === order.id ? null : order.id
+                              )}
+                            >
+                              <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            {statusDropdownOrderId === order.id && (
+                              <div
+                                ref={statusDropdownRef}
+                                className="absolute right-0 top-full mt-1 w-48 bg-background border border-border rounded-lg shadow-lg z-50 py-1"
+                              >
+                                {getNextStatuses(order.status).length > 0 && (
+                                  <>
+                                    <p className="px-3 py-1 text-xs text-muted-foreground font-medium">Update Status</p>
+                                    {getNextStatuses(order.status).map(status => (
+                                      <button
+                                        key={status}
+                                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent capitalize disabled:opacity-50"
+                                        disabled={updatingStatusOrderId === order.id}
+                                        onClick={() => handleUpdateStatus(order.id, status)}
+                                      >
+                                        {updatingStatusOrderId === order.id ? (
+                                          <span className="flex items-center gap-2">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            Updating...
+                                          </span>
+                                        ) : (
+                                          status
+                                        )}
+                                      </button>
+                                    ))}
+                                    <div className="border-t border-border my-1" />
+                                  </>
+                                )}
+                                {order.paymentStatus === 'paid' && order.status !== 'refunded' && (
+                                  <button
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-accent text-destructive disabled:opacity-50"
+                                    disabled={refundingOrderId === order.id}
+                                    onClick={() => handleRefundOrder(order.id)}
+                                  >
+                                    {refundingOrderId === order.id ? (
+                                      <span className="flex items-center gap-2">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Processing refund...
+                                      </span>
+                                    ) : (
+                                      'Refund Order'
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                                  onClick={() => {
+                                    handlePrintReceipt(order.id);
+                                    setStatusDropdownOrderId(null);
+                                  }}
+                                >
+                                  Print Receipt
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -689,18 +976,61 @@ export default function OrdersPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 pt-4">
-                <Button variant="outline" className="flex-1">
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print Receipt
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={printingOrderId === selectedOrder.id}
+                  onClick={() => handlePrintReceipt(selectedOrder.id)}
+                >
+                  {printingOrderId === selectedOrder.id ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Printer className="w-4 h-4 mr-2" />
+                  )}
+                  {printingOrderId === selectedOrder.id ? 'Preparing...' : 'Print Receipt'}
                 </Button>
-                {selectedOrder.status !== 'completed' && selectedOrder.status !== 'cancelled' && (
-                  <Button className="flex-1">
-                    Update Status
-                  </Button>
+                {selectedOrder.status !== 'completed' && selectedOrder.status !== 'cancelled' && selectedOrder.status !== 'refunded' && (
+                  <div className="relative flex-1">
+                    <Button
+                      className="w-full"
+                      disabled={updatingStatusOrderId === selectedOrder.id}
+                      onClick={() => setStatusDropdownOrderId(
+                        statusDropdownOrderId === `modal-${selectedOrder.id}` ? null : `modal-${selectedOrder.id}`
+                      )}
+                    >
+                      {updatingStatusOrderId === selectedOrder.id ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <ArrowUpDown className="w-4 h-4 mr-2" />
+                      )}
+                      {updatingStatusOrderId === selectedOrder.id ? 'Updating...' : 'Update Status'}
+                    </Button>
+                    {statusDropdownOrderId === `modal-${selectedOrder.id}` && (
+                      <div className="absolute bottom-full left-0 mb-1 w-full bg-background border border-border rounded-lg shadow-lg z-50 py-1">
+                        {getNextStatuses(selectedOrder.status).map(status => (
+                          <button
+                            key={status}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent capitalize"
+                            onClick={() => handleUpdateStatus(selectedOrder.id, status)}
+                          >
+                            {status}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {selectedOrder.paymentStatus === 'paid' && selectedOrder.status !== 'refunded' && (
-                  <Button variant="outline" className="text-destructive hover:text-destructive/80">
-                    Refund
+                  <Button
+                    variant="outline"
+                    className="text-destructive hover:text-destructive/80"
+                    disabled={refundingOrderId === selectedOrder.id}
+                    onClick={() => handleRefundOrder(selectedOrder.id)}
+                  >
+                    {refundingOrderId === selectedOrder.id ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : null}
+                    {refundingOrderId === selectedOrder.id ? 'Processing...' : 'Refund'}
                   </Button>
                 )}
               </div>

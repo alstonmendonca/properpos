@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 import {
   emailValidation,
   phoneValidation,
@@ -196,8 +197,26 @@ export default function NewCustomerPage() {
     setIsSubmitting(true);
 
     try {
-      // API call would go here
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await apiClient.createCustomer({
+        personalInfo: {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          email: form.email || undefined,
+          phone: form.phone,
+        },
+        addresses: form.address.street ? [{
+          type: 'home' as const,
+          address: {
+            street: form.address.street,
+            city: form.address.city,
+            state: form.address.state,
+            country: form.address.country,
+            zipCode: form.address.zipCode,
+          },
+          isDefault: true,
+        }] : [],
+        tags: form.tags,
+      });
 
       addToast({
         type: 'success',

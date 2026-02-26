@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface User {
   id: string;
@@ -51,25 +52,29 @@ export default function UsersSettingsPage() {
   const [inviteLoading, setInviteLoading] = useState(false);
 
   useEffect(() => {
-    // Mock data fetch
-    setTimeout(() => {
-      setRoles([
-        { id: 'owner', name: 'Owner', description: 'Full access to all features', permissions: ['*'] },
-        { id: 'admin', name: 'Admin', description: 'Manage settings, users, and reports', permissions: ['settings', 'users', 'reports', 'pos', 'products', 'customers', 'orders'] },
-        { id: 'manager', name: 'Manager', description: 'Access to POS, reports, and inventory', permissions: ['pos', 'products', 'customers', 'orders', 'reports', 'inventory'] },
-        { id: 'cashier', name: 'Cashier', description: 'POS access only', permissions: ['pos', 'orders'] },
-      ]);
+    const loadData = async () => {
+      try {
+        setRoles([
+          { id: 'owner', name: 'Owner', description: 'Full access to all features', permissions: ['*'] },
+          { id: 'admin', name: 'Admin', description: 'Manage settings, users, and reports', permissions: ['settings', 'users', 'reports', 'pos', 'products', 'customers', 'orders'] },
+          { id: 'manager', name: 'Manager', description: 'Access to POS, reports, and inventory', permissions: ['pos', 'products', 'customers', 'orders', 'reports', 'inventory'] },
+          { id: 'cashier', name: 'Cashier', description: 'POS access only', permissions: ['pos', 'orders'] },
+        ]);
 
-      setUsers([
-        { id: '1', firstName: 'John', lastName: 'Doe', email: 'john@example.com', role: 'owner', status: 'active', lastActive: new Date().toISOString(), createdAt: new Date(Date.now() - 86400000 * 365).toISOString() },
-        { id: '2', firstName: 'Jane', lastName: 'Smith', email: 'jane@example.com', role: 'admin', status: 'active', lastActive: new Date(Date.now() - 3600000).toISOString(), createdAt: new Date(Date.now() - 86400000 * 180).toISOString() },
-        { id: '3', firstName: 'Bob', lastName: 'Wilson', email: 'bob@example.com', role: 'manager', status: 'active', lastActive: new Date(Date.now() - 86400000).toISOString(), createdAt: new Date(Date.now() - 86400000 * 90).toISOString() },
-        { id: '4', firstName: 'Alice', lastName: 'Brown', email: 'alice@example.com', role: 'cashier', status: 'inactive', lastActive: new Date(Date.now() - 86400000 * 30).toISOString(), createdAt: new Date(Date.now() - 86400000 * 60).toISOString() },
-        { id: '5', firstName: 'Charlie', lastName: 'Davis', email: 'charlie@example.com', role: 'cashier', status: 'pending', createdAt: new Date(Date.now() - 86400000).toISOString() },
-      ]);
-
-      setIsLoading(false);
-    }, 500);
+        const response = await apiClient.get<any>('/tenants/current/members');
+        const members = response.data?.data || response.data || [];
+        setUsers(Array.isArray(members) ? members : []);
+      } catch (error) {
+        addToast({
+          type: 'error',
+          title: 'Failed to load team members',
+          message: 'Please try again',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
   const filteredUsers = users.filter(user => {
@@ -116,8 +121,10 @@ export default function UsersSettingsPage() {
 
     setInviteLoading(true);
     try {
-      // API call would go here
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await apiClient.post('/tenants/current/members/invite', {
+        email: inviteEmail,
+        role: inviteRole,
+      });
 
       addToast({
         type: 'success',

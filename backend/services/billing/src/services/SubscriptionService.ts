@@ -39,6 +39,7 @@ interface BillingSubscription {
     monthlyOrders?: number;
     storageGB?: number;
   };
+  cancelAtPeriodEnd?: boolean;
   cancelledAt?: Date;
   cancelledBy?: string;
   cancellationReason?: string;

@@ -15,11 +15,32 @@ import {
   ReceiptHistory,
 } from '../types';
 
-// Stub email and SMS services for now
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008';
+
 class EmailService {
-  async send(options: any): Promise<{ success: boolean; messageId?: string }> {
-    logger.info('Email service not implemented', { options });
-    return { success: true, messageId: 'stub' };
+  async send(options: { to: string; subject: string; html?: string; text?: string; attachments?: any[] }): Promise<{ success: boolean; messageId?: string }> {
+    try {
+      const response = await fetch(`${NOTIFICATION_SERVICE_URL}/internal/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+          text: options.text,
+          attachments: options.attachments,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data?.data?.messageId };
+      }
+      logger.warn('Notification service returned non-OK for email', { status: response.status });
+      return { success: false };
+    } catch (error) {
+      logger.error('Failed to send email via notification service', { error, to: options.to });
+      return { success: false };
+    }
   }
   async sendEmail(options: any): Promise<{ success: boolean; messageId?: string }> {
     return this.send(options);
@@ -27,9 +48,26 @@ class EmailService {
 }
 
 class SMSService {
-  async send(options: any): Promise<{ success: boolean; messageId?: string }> {
-    logger.info('SMS service not implemented', { options });
-    return { success: true, messageId: 'stub' };
+  async send(options: { to: string; message: string }): Promise<{ success: boolean; messageId?: string }> {
+    try {
+      const response = await fetch(`${NOTIFICATION_SERVICE_URL}/internal/send-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: options.to,
+          message: options.message,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return { success: true, messageId: data?.data?.messageId };
+      }
+      logger.warn('Notification service returned non-OK for SMS', { status: response.status });
+      return { success: false };
+    } catch (error) {
+      logger.error('Failed to send SMS via notification service', { error, to: options.to });
+      return { success: false };
+    }
   }
   async sendSMS(options: any): Promise<{ success: boolean; messageId?: string }> {
     return this.send(options);
@@ -1127,9 +1165,13 @@ export class ReceiptService {
    * Generate receipt URL for viewing
    */
   private async generateReceiptUrl(tenantId: string, orderId: string): Promise<string> {
-    // In a real implementation, this would generate a secure, time-limited URL
-    // For now, return a placeholder URL
-    return `${process.env.FRONTEND_URL}/receipts/${orderId}?tenant=${tenantId}`;
+    const crypto = require('crypto');
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const secret = process.env.RECEIPT_URL_SECRET || process.env.JWT_SECRET || 'receipt-secret';
+    const expiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60; // 7 days
+    const payload = `${tenantId}:${orderId}:${expiresAt}`;
+    const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex').substring(0, 16);
+    return `${baseUrl}/receipts/${orderId}?tenant=${tenantId}&expires=${expiresAt}&sig=${signature}`;
   }
 
   /**

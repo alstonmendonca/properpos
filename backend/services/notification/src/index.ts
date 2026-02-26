@@ -101,6 +101,31 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/webhooks', webhookRoutes);
 app.use('/api/v1/preferences', preferencesRoutes);
 
+// Internal service-to-service endpoints (no JWT auth, protected by network policy)
+app.post('/internal/send-email', async (req, res) => {
+  try {
+    const { EmailService } = await import('./services/EmailService');
+    const emailService = new EmailService();
+    const result = await emailService.send(req.body);
+    res.json(createResponse({ messageId: result.messageId }, 'Email sent'));
+  } catch (error) {
+    logger.error('Internal email send failed', { error });
+    res.status(500).json({ success: false, error: 'Failed to send email' });
+  }
+});
+
+app.post('/internal/send-sms', async (req, res) => {
+  try {
+    const { SMSService } = await import('./services/SMSService');
+    const smsService = new SMSService();
+    const result = await smsService.send(req.body);
+    res.json(createResponse({ messageId: result.sid }, 'SMS sent'));
+  } catch (error) {
+    logger.error('Internal SMS send failed', { error });
+    res.status(500).json({ success: false, error: 'Failed to send SMS' });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json(createResponse({

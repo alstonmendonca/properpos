@@ -332,22 +332,34 @@ proxyRouter.get('/services/:serviceName/health', async (req, res): Promise<void>
   }
 
   try {
-    // In a real implementation, you'd make an HTTP request to the service
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(`${serviceUrl}/health`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const data = await response.json().catch(() => ({}));
+
     res.json({
       success: true,
       data: {
         service: serviceName,
-        status: 'unknown', // Would be actual status from service
+        status: response.ok ? 'healthy' : 'unhealthy',
+        statusCode: response.status,
         url: serviceUrl,
+        details: data,
         timestamp: new Date().toISOString(),
       },
     });
   } catch (error) {
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
     res.status(503).json({
       success: false,
       error: {
         code: 'SERVICE_UNHEALTHY',
-        message: `Service ${serviceName} is unhealthy`,
+        message: `Service ${serviceName} is ${isTimeout ? 'not responding' : 'unhealthy'}`,
         details: error instanceof Error ? error.message : 'Unknown error',
       },
     });

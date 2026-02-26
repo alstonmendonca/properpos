@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { useCartStore, toast } from '@/store';
+import { useCartStore, useAuthStore, toast } from '@/store';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,6 +61,12 @@ export default function POSPage() {
       orderType: s.orderType, setOrderType: s.setOrderType, tableNumber: s.tableNumber, setTableNumber: s.setTableNumber,
     }))
   );
+
+  const tenant = useAuthStore((s) => s.tenant);
+  const user = useAuthStore((s) => s.user);
+  const locationId = user?.tenantMemberships?.find(
+    (m) => m.organizationId === tenant?.id
+  )?.locationId || tenant?.id || '';
 
   const [categories, setCategories] = useState<Category[]>([{ id: 'all', name: 'All Items' }]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -105,7 +111,6 @@ export default function POSPage() {
           })));
         }
       } catch (error) {
-        console.error('Failed to fetch POS data:', error);
         toast.error('Failed to load', 'Could not load products. Please try again.');
       } finally {
         setIsLoading(false);
@@ -132,7 +137,6 @@ export default function POSPage() {
         })));
       }
     } catch (error) {
-      console.error('Failed to refresh products:', error);
     } finally {
       setIsLoading(false);
     }
@@ -173,14 +177,80 @@ export default function POSPage() {
   const handlePayment = async (method: string) => {
     setProcessingPayment(true);
     try {
-      // API call would go here
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success('Payment Successful', `Order completed via ${method}`);
+      const orderTypeMap: Record<string, string> = {
+        dine_in: 'dine-in',
+        takeaway: 'takeaway',
+        delivery: 'delivery',
+        online: 'online',
+      };
+
+      const paymentMethodMap: Record<string, string> = {
+        Cash: 'cash',
+        Card: 'card',
+        Digital: 'digital_wallet',
+      };
+
+      const orderItems = items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        notes: item.notes,
+      }));
+
+      const discounts: Array<{ type: 'percentage' | 'fixed' | 'item'; description: string; amount: number }> = [];
+      const cartState = useCartStore.getState();
+      if (cartState.discountType && cartState.discountValue) {
+        discounts.push({
+          type: cartState.discountType as 'percentage' | 'fixed',
+          description: cartState.discountType === 'percentage'
+            ? `${cartState.discountValue}% off`
+            : `$${cartState.discountValue} off`,
+          amount: cartState.discountValue,
+        });
+      }
+
+      const customer = cartState.customer
+        ? {
+            id: cartState.customer.id,
+            name: cartState.customer.name,
+            phone: cartState.customer.phone,
+            email: cartState.customer.email,
+          }
+        : undefined;
+
+      const payload: any = {
+        orderType: orderTypeMap[orderType] || 'dine-in',
+        locationId: locationId,
+        items: orderItems,
+        discounts,
+        payment: {
+          method: paymentMethodMap[method] || 'cash',
+          paidAmount: total,
+        },
+      };
+
+      if (customer) {
+        payload.customer = customer;
+      }
+
+      if (orderType === 'dine_in' && tableNumber) {
+        payload.diningInfo = {
+          tableNumber,
+          numberOfGuests: 1,
+        };
+      }
+
+      const order = await apiClient.createOrder(payload);
+      const orderNumber = order?.orderNumber || (order as any)?.id || '';
+      toast.success('Payment Successful', orderNumber
+        ? `Order #${orderNumber} completed via ${method}`
+        : `Order completed via ${method}`);
       clearCart();
       setShowPaymentModal(false);
       setShowCartDrawer(false);
-    } catch (error) {
-      toast.error('Payment Failed', 'Payment failed. Please try again.');
+    } catch (error: any) {
+      const message = error?.message || 'Payment failed. Please try again.';
+      toast.error('Payment Failed', message);
     } finally {
       setProcessingPayment(false);
     }

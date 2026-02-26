@@ -864,8 +864,49 @@ export class PurchaseOrderService {
         .sort((a, b) => b.totalValue - a.totalValue)
         .slice(0, 10);
 
-      // Monthly trend (placeholder - would need more complex aggregation)
-      const monthlyTrend: Array<{ month: string; orderCount: number; totalValue: number }> = [];
+      // Monthly trend via aggregation grouped by year/month
+      const monthlyTrendPipeline = [
+        { $match: matchStage },
+        {
+          $group: {
+            _id: {
+              year: { $year: '$createdAt' },
+              month: { $month: '$createdAt' }
+            },
+            orderCount: { $sum: 1 },
+            totalValue: { $sum: '$totalAmount' }
+          }
+        },
+        {
+          $sort: { '_id.year': 1 as const, '_id.month': 1 as const }
+        },
+        {
+          $project: {
+            _id: 0,
+            month: {
+              $dateToString: {
+                format: '%Y-%m',
+                date: {
+                  $dateFromParts: {
+                    year: '$_id.year',
+                    month: '$_id.month',
+                    day: 1
+                  }
+                }
+              }
+            },
+            orderCount: 1,
+            totalValue: 1
+          }
+        }
+      ];
+
+      const monthlyTrendResults = await collection.aggregate(monthlyTrendPipeline).toArray();
+      const monthlyTrend: Array<{ month: string; orderCount: number; totalValue: number }> = monthlyTrendResults.map((item: any) => ({
+        month: item.month as string,
+        orderCount: item.orderCount as number,
+        totalValue: parseFloat(new Decimal(item.totalValue).toFixed(2)),
+      }));
 
       return {
         totalOrders: stats.totalOrders,

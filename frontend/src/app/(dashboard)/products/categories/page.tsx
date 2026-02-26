@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface Category {
   id: string;
@@ -46,81 +47,33 @@ export default function CategoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
-  useEffect(() => {
-    setTimeout(() => {
-      setCategories([
-        {
-          id: '1',
-          name: 'Food',
-          slug: 'food',
-          description: 'Main food items',
-          productCount: 45,
-          displayOrder: 1,
-          isActive: true,
-          createdAt: new Date(Date.now() - 86400000 * 365).toISOString(),
-          children: [
-            { id: '1-1', name: 'Burgers', slug: 'burgers', parentId: '1', productCount: 12, displayOrder: 1, isActive: true, createdAt: new Date().toISOString() },
-            { id: '1-2', name: 'Pizzas', slug: 'pizzas', parentId: '1', productCount: 8, displayOrder: 2, isActive: true, createdAt: new Date().toISOString() },
-            { id: '1-3', name: 'Salads', slug: 'salads', parentId: '1', productCount: 6, displayOrder: 3, isActive: true, createdAt: new Date().toISOString() },
-            { id: '1-4', name: 'Sandwiches', slug: 'sandwiches', parentId: '1', productCount: 10, displayOrder: 4, isActive: true, createdAt: new Date().toISOString() },
-            { id: '1-5', name: 'Pasta', slug: 'pasta', parentId: '1', productCount: 5, displayOrder: 5, isActive: false, createdAt: new Date().toISOString() },
-          ],
-        },
-        {
-          id: '2',
-          name: 'Beverages',
-          slug: 'beverages',
-          description: 'Drinks and refreshments',
-          productCount: 32,
-          displayOrder: 2,
-          isActive: true,
-          createdAt: new Date(Date.now() - 86400000 * 300).toISOString(),
-          children: [
-            { id: '2-1', name: 'Soft Drinks', slug: 'soft-drinks', parentId: '2', productCount: 15, displayOrder: 1, isActive: true, createdAt: new Date().toISOString() },
-            { id: '2-2', name: 'Coffee & Tea', slug: 'coffee-tea', parentId: '2', productCount: 10, displayOrder: 2, isActive: true, createdAt: new Date().toISOString() },
-            { id: '2-3', name: 'Juices', slug: 'juices', parentId: '2', productCount: 7, displayOrder: 3, isActive: true, createdAt: new Date().toISOString() },
-          ],
-        },
-        {
-          id: '3',
-          name: 'Desserts',
-          slug: 'desserts',
-          description: 'Sweet treats',
-          productCount: 18,
-          displayOrder: 3,
-          isActive: true,
-          createdAt: new Date(Date.now() - 86400000 * 200).toISOString(),
-          children: [
-            { id: '3-1', name: 'Cakes', slug: 'cakes', parentId: '3', productCount: 8, displayOrder: 1, isActive: true, createdAt: new Date().toISOString() },
-            { id: '3-2', name: 'Ice Cream', slug: 'ice-cream', parentId: '3', productCount: 6, displayOrder: 2, isActive: true, createdAt: new Date().toISOString() },
-            { id: '3-3', name: 'Pastries', slug: 'pastries', parentId: '3', productCount: 4, displayOrder: 3, isActive: true, createdAt: new Date().toISOString() },
-          ],
-        },
-        {
-          id: '4',
-          name: 'Sides',
-          slug: 'sides',
-          description: 'Side dishes and add-ons',
-          productCount: 24,
-          displayOrder: 4,
-          isActive: true,
-          createdAt: new Date(Date.now() - 86400000 * 150).toISOString(),
-        },
-        {
-          id: '5',
-          name: 'Merchandise',
-          slug: 'merchandise',
-          description: 'Branded items and merchandise',
-          productCount: 8,
-          displayOrder: 5,
-          isActive: false,
-          createdAt: new Date(Date.now() - 86400000 * 60).toISOString(),
-        },
-      ]);
-      setExpandedIds(['1', '2', '3']);
+  const fetchCategories = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiClient.get<any>('/categories', {
+        params: { includeInactive: true },
+      });
+      const data: Category[] = response.data || [];
+      setCategories(data);
+      // Auto-expand categories that have children
+      const withChildren = data
+        .filter((cat: Category) => cat.children && cat.children.length > 0)
+        .map((cat: Category) => cat.id);
+      setExpandedIds(withChildren);
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to load categories',
+        message: error?.message || 'An unexpected error occurred',
+      });
+    } finally {
       setIsLoading(false);
-    }, 500);
-  }, []);
+    }
+  }, [addToast]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev =>
@@ -128,13 +81,44 @@ export default function CategoriesPage() {
     );
   };
 
-  const toggleActive = (category: Category) => {
-    // In real app, this would call API
-    addToast({
-      type: 'success',
-      title: category.isActive ? 'Category hidden' : 'Category visible',
-      message: `${category.name} is now ${category.isActive ? 'hidden' : 'visible'} in POS`,
-    });
+  const toggleActive = async (category: Category) => {
+    try {
+      if (category.isActive) {
+        await apiClient.post<any>(`/categories/${category.id}/deactivate`);
+      } else {
+        await apiClient.post<any>(`/categories/${category.id}/reactivate`);
+      }
+      addToast({
+        type: 'success',
+        title: category.isActive ? 'Category hidden' : 'Category visible',
+        message: `${category.name} is now ${category.isActive ? 'hidden' : 'visible'} in POS`,
+      });
+      await fetchCategories();
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to update category',
+        message: error?.message || 'An unexpected error occurred',
+      });
+    }
+  };
+
+  const handleDeleteCategory = async (category: Category) => {
+    try {
+      await apiClient.post<any>(`/categories/${category.id}/deactivate`);
+      addToast({
+        type: 'success',
+        title: 'Category deactivated',
+        message: `${category.name} has been deactivated`,
+      });
+      await fetchCategories();
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to deactivate category',
+        message: error?.message || 'An unexpected error occurred',
+      });
+    }
   };
 
   const filteredCategories = categories.filter(cat => {
@@ -311,7 +295,10 @@ export default function CategoriesPage() {
                       >
                         <Edit className="w-4 h-4 text-muted-foreground" />
                       </button>
-                      <button className="p-2 hover:bg-accent rounded cursor-pointer">
+                      <button
+                        onClick={() => handleDeleteCategory(category)}
+                        className="p-2 hover:bg-accent rounded cursor-pointer"
+                      >
                         <Trash2 className="w-4 h-4 text-red-400" />
                       </button>
                     </div>
@@ -367,7 +354,10 @@ export default function CategoriesPage() {
                             >
                               <Edit className="w-4 h-4 text-muted-foreground" />
                             </button>
-                            <button className="p-2 hover:bg-accent rounded cursor-pointer">
+                            <button
+                              onClick={() => handleDeleteCategory(child)}
+                              className="p-2 hover:bg-accent rounded cursor-pointer"
+                            >
                               <Trash2 className="w-4 h-4 text-red-400" />
                             </button>
                           </div>
@@ -388,14 +378,25 @@ export default function CategoriesPage() {
           category={editingCategory}
           parentCategories={categories.filter(c => !c.parentId)}
           onClose={() => { setShowModal(false); setEditingCategory(null); }}
-          onSave={(cat) => {
-            if (editingCategory) {
-              addToast({ type: 'success', title: 'Category updated' });
-            } else {
-              addToast({ type: 'success', title: 'Category created' });
+          onSave={async (formData) => {
+            try {
+              if (editingCategory) {
+                await apiClient.put<any>(`/categories/${editingCategory.id}`, formData);
+                addToast({ type: 'success', title: 'Category updated' });
+              } else {
+                await apiClient.post<any>('/categories', formData);
+                addToast({ type: 'success', title: 'Category created' });
+              }
+              setShowModal(false);
+              setEditingCategory(null);
+              await fetchCategories();
+            } catch (error: any) {
+              addToast({
+                type: 'error',
+                title: editingCategory ? 'Failed to update category' : 'Failed to create category',
+                message: error?.message || 'An unexpected error occurred',
+              });
             }
-            setShowModal(false);
-            setEditingCategory(null);
           }}
         />
       )}
@@ -425,7 +426,7 @@ function CategoryModal({
   category: Category | null;
   parentCategories: Category[];
   onClose: () => void;
-  onSave: (cat: Category) => void;
+  onSave: (formData: { name: string; slug: string; description: string; parentId: string; isActive: boolean }) => Promise<void>;
 }) {
   const [form, setForm] = useState({
     name: category?.name || '',
@@ -434,6 +435,7 @@ function CategoryModal({
     parentId: category?.parentId || '',
     isActive: category?.isActive ?? true,
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
@@ -452,6 +454,16 @@ function CategoryModal({
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await onSave(form);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <Card className="w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -459,7 +471,7 @@ function CategoryModal({
           <CardTitle>{category ? 'Edit Category' : 'Add Category'}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => { e.preventDefault(); onSave(form as unknown as Category); }} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">Category Name *</label>
               <input
@@ -525,8 +537,10 @@ function CategoryModal({
             </label>
 
             <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" className="flex-1 cursor-pointer" onClick={onClose}>Cancel</Button>
-              <Button type="submit" className="flex-1 cursor-pointer">{category ? 'Save Changes' : 'Create Category'}</Button>
+              <Button type="button" variant="outline" className="flex-1 cursor-pointer" onClick={onClose} disabled={isSaving}>Cancel</Button>
+              <Button type="submit" className="flex-1 cursor-pointer" disabled={isSaving}>
+                {isSaving ? 'Saving...' : (category ? 'Save Changes' : 'Create Category')}
+              </Button>
             </div>
           </form>
         </CardContent>

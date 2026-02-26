@@ -1,6 +1,9 @@
 # ProperPOS Inventory Service Dockerfile
 FROM node:20-alpine AS base
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 FROM base AS deps
 WORKDIR /app
 COPY shared ./shared
@@ -33,4 +36,8 @@ COPY --from=builder /app/services/inventory/node_modules ./services/inventory/no
 USER nodeuser
 WORKDIR /app/services/inventory
 EXPOSE 3004
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:3004/health || exit 1
+
 CMD ["node", "dist/index.js"]

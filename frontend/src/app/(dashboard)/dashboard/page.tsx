@@ -113,7 +113,6 @@ export default function DashboardPage() {
           setTopProducts([]);
         }
       } catch (error) {
-        console.error('Failed to fetch dashboard data:', error);
         setStats({
           todaySales: 0, todayOrders: 0, todayCustomers: 0,
           lowStockItems: 0, salesChange: 0, ordersChange: 0, customersChange: 0,

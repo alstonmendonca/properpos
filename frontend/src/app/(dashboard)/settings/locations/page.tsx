@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface Location {
   id: string;
@@ -43,6 +44,64 @@ interface Location {
   createdAt: string;
 }
 
+// Transform API response data to match the local Location interface
+function transformApiLocation(apiLoc: any): Location {
+  const businessHours: Location['businessHours'] = {};
+  if (apiLoc.businessHours) {
+    for (const [day, hours] of Object.entries(apiLoc.businessHours)) {
+      const h = hours as any;
+      businessHours[day] = {
+        open: h.openTime || h.open || '09:00',
+        close: h.closeTime || h.close || '17:00',
+        closed: h.isOpen === false || h.closed === true,
+      };
+    }
+  }
+
+  return {
+    id: apiLoc.id || apiLoc._id,
+    name: apiLoc.name || '',
+    address: {
+      street: apiLoc.address?.street || '',
+      city: apiLoc.address?.city || '',
+      state: apiLoc.address?.state || '',
+      zipCode: apiLoc.address?.zipCode || '',
+      country: apiLoc.address?.country || 'United States',
+    },
+    phone: apiLoc.phone || apiLoc.contactInfo?.phone || '',
+    email: apiLoc.email || apiLoc.contactInfo?.email || '',
+    businessHours,
+    status: apiLoc.isActive === false ? 'inactive' : (apiLoc.status || 'active'),
+    manager: apiLoc.manager || apiLoc.managerName || '',
+    staffCount: apiLoc.staffCount || 0,
+    createdAt: apiLoc.createdAt ? new Date(apiLoc.createdAt).toISOString() : new Date().toISOString(),
+  };
+}
+
+// Transform local Location data to API format for create/update
+function transformToApiPayload(loc: Partial<Location>): any {
+  const businessHours: any = {};
+  if (loc.businessHours) {
+    for (const [day, hours] of Object.entries(loc.businessHours)) {
+      businessHours[day] = {
+        isOpen: !hours.closed,
+        openTime: hours.open,
+        closeTime: hours.close,
+      };
+    }
+  }
+
+  return {
+    name: loc.name,
+    address: loc.address,
+    businessHours,
+    phone: loc.phone,
+    email: loc.email,
+    manager: loc.manager,
+    staffCount: loc.staffCount,
+  };
+}
+
 export default function LocationsSettingsPage() {
   const addToast = useUIStore(s => s.addToast);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -50,75 +109,86 @@ export default function LocationsSettingsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const fetchLocations = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const params: any = {};
+      if (searchQuery) {
+        params.search = searchQuery;
+      }
+      const response = await apiClient.get<any>('/locations', { params });
+      const data = response.data;
+      const items = Array.isArray(data) ? data : (data?.items || data?.locations || []);
+      setLocations(items.map(transformApiLocation));
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Failed to load locations',
+        message: error?.message || 'An unexpected error occurred',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [searchQuery, addToast]);
 
   useEffect(() => {
-    // Mock data fetch
-    setTimeout(() => {
-      setLocations([
-        {
-          id: '1',
-          name: 'Main Street Location',
-          address: { street: '123 Main Street', city: 'New York', state: 'NY', zipCode: '10001', country: 'United States' },
-          phone: '+1 (555) 123-4567',
-          email: 'main@restaurant.com',
-          businessHours: {
-            monday: { open: '09:00', close: '22:00', closed: false },
-            tuesday: { open: '09:00', close: '22:00', closed: false },
-            wednesday: { open: '09:00', close: '22:00', closed: false },
-            thursday: { open: '09:00', close: '22:00', closed: false },
-            friday: { open: '09:00', close: '23:00', closed: false },
-            saturday: { open: '10:00', close: '23:00', closed: false },
-            sunday: { open: '10:00', close: '21:00', closed: false },
-          },
-          status: 'active',
-          manager: 'John Doe',
-          staffCount: 12,
-          createdAt: new Date(Date.now() - 86400000 * 365).toISOString(),
-        },
-        {
-          id: '2',
-          name: 'Downtown Branch',
-          address: { street: '456 Oak Avenue', city: 'New York', state: 'NY', zipCode: '10002', country: 'United States' },
-          phone: '+1 (555) 234-5678',
-          email: 'downtown@restaurant.com',
-          businessHours: {
-            monday: { open: '10:00', close: '21:00', closed: false },
-            tuesday: { open: '10:00', close: '21:00', closed: false },
-            wednesday: { open: '10:00', close: '21:00', closed: false },
-            thursday: { open: '10:00', close: '21:00', closed: false },
-            friday: { open: '10:00', close: '22:00', closed: false },
-            saturday: { open: '11:00', close: '22:00', closed: false },
-            sunday: { open: '00:00', close: '00:00', closed: true },
-          },
-          status: 'active',
-          manager: 'Jane Smith',
-          staffCount: 8,
-          createdAt: new Date(Date.now() - 86400000 * 180).toISOString(),
-        },
-        {
-          id: '3',
-          name: 'Airport Kiosk',
-          address: { street: 'Terminal 3, Gate B12', city: 'New York', state: 'NY', zipCode: '11430', country: 'United States' },
-          phone: '+1 (555) 345-6789',
-          email: 'airport@restaurant.com',
-          businessHours: {
-            monday: { open: '05:00', close: '23:00', closed: false },
-            tuesday: { open: '05:00', close: '23:00', closed: false },
-            wednesday: { open: '05:00', close: '23:00', closed: false },
-            thursday: { open: '05:00', close: '23:00', closed: false },
-            friday: { open: '05:00', close: '23:00', closed: false },
-            saturday: { open: '05:00', close: '23:00', closed: false },
-            sunday: { open: '05:00', close: '23:00', closed: false },
-          },
-          status: 'inactive',
-          manager: 'Bob Wilson',
-          staffCount: 4,
-          createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-        },
-      ]);
-      setIsLoading(false);
-    }, 500);
-  }, []);
+    fetchLocations();
+  }, [fetchLocations]);
+
+  const handleToggleStatus = async (location: Location) => {
+    setTogglingId(location.id);
+    try {
+      if (location.status === 'active') {
+        await apiClient.post<any>(`/locations/${location.id}/deactivate`);
+        addToast({
+          type: 'success',
+          title: 'Location deactivated',
+          message: `${location.name} has been deactivated`,
+        });
+      } else {
+        await apiClient.post<any>(`/locations/${location.id}/reactivate`);
+        addToast({
+          type: 'success',
+          title: 'Location reactivated',
+          message: `${location.name} has been reactivated`,
+        });
+      }
+      await fetchLocations();
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Action failed',
+        message: error?.message || 'Could not update location status',
+      });
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const handleSave = async (formData: Location) => {
+    const payload = transformToApiPayload(formData);
+    try {
+      if (editingLocation) {
+        await apiClient.put<any>(`/locations/${editingLocation.id}`, payload);
+        addToast({ type: 'success', title: 'Location updated', message: `${formData.name} has been updated` });
+      } else {
+        await apiClient.post<any>('/locations', payload);
+        addToast({ type: 'success', title: 'Location created', message: `${formData.name} has been added` });
+      }
+      setShowCreateModal(false);
+      setEditingLocation(null);
+      await fetchLocations();
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: editingLocation ? 'Failed to update location' : 'Failed to create location',
+        message: error?.message || 'An unexpected error occurred',
+      });
+      throw error; // Re-throw so the modal knows saving failed
+    }
+  };
 
   const filteredLocations = locations.filter(location => {
     if (searchQuery) {
@@ -275,8 +345,25 @@ export default function LocationsSettingsPage() {
                 <Button variant="outline" size="sm" className="cursor-pointer">
                   <Settings className="w-4 h-4" />
                 </Button>
-                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 cursor-pointer">
-                  <Trash2 className="w-4 h-4" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'cursor-pointer',
+                    location.status === 'active'
+                      ? 'text-red-600 hover:text-red-700'
+                      : 'text-emerald-600 hover:text-emerald-700'
+                  )}
+                  disabled={togglingId === location.id}
+                  onClick={() => handleToggleStatus(location)}
+                >
+                  {togglingId === location.id ? (
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  ) : location.status === 'active' ? (
+                    <XCircle className="w-4 h-4" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -311,17 +398,7 @@ export default function LocationsSettingsPage() {
             setShowCreateModal(false);
             setEditingLocation(null);
           }}
-          onSave={(location) => {
-            if (editingLocation) {
-              setLocations(prev => prev.map(l => l.id === location.id ? location : l));
-              addToast({ type: 'success', title: 'Location updated', message: `${location.name} has been updated` });
-            } else {
-              setLocations(prev => [...prev, { ...location, id: Date.now().toString() }]);
-              addToast({ type: 'success', title: 'Location created', message: `${location.name} has been added` });
-            }
-            setShowCreateModal(false);
-            setEditingLocation(null);
-          }}
+          onSave={handleSave}
         />
       )}
     </div>
@@ -331,7 +408,7 @@ export default function LocationsSettingsPage() {
 interface LocationModalProps {
   location: Location | null;
   onClose: () => void;
-  onSave: (location: Location) => void;
+  onSave: (location: Location) => Promise<void>;
 }
 
 function LocationModal({ location, onClose, onSave }: LocationModalProps) {
@@ -412,6 +489,8 @@ function LocationModal({ location, onClose, onSave }: LocationModalProps) {
       await onSave(form as Location);
       setForm(initialForm);
       setActiveTab('basic');
+    } catch {
+      // Error is handled by the parent via toast; keep modal open
     } finally {
       setSaving(false);
     }

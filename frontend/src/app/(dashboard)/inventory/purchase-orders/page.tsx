@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface PurchaseOrderItem {
   productId: string;
@@ -41,7 +42,7 @@ interface PurchaseOrder {
   orderNumber: string;
   supplierId: string;
   supplierName: string;
-  status: 'draft' | 'sent' | 'confirmed' | 'shipped' | 'received' | 'cancelled';
+  status: 'draft' | 'pending' | 'approved' | 'ordered' | 'partially_received' | 'received' | 'cancelled';
   items: PurchaseOrderItem[];
   subtotal: number;
   tax: number;
@@ -54,6 +55,13 @@ interface PurchaseOrder {
   createdBy: string;
 }
 
+interface PurchaseOrderStats {
+  total: number;
+  pending: number;
+  inTransit: number;
+  totalValue: number;
+}
+
 export default function PurchaseOrdersPage() {
   const addToast = useUIStore(s => s.addToast);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -62,92 +70,165 @@ export default function PurchaseOrdersPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [stats, setStats] = useState<PurchaseOrderStats>({ total: 0, pending: 0, inTransit: 0, totalValue: 0 });
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const params: Record<string, any> = {};
+      if (selectedStatus !== 'all') {
+        params.status = selectedStatus;
+      }
+      if (searchQuery) {
+        params.search = searchQuery;
+      }
+      const response = await apiClient.get<any>('/inventory/purchase-orders', { params });
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setOrders(data);
+      } else if (data && Array.isArray(data.purchaseOrders)) {
+        setOrders(data.purchaseOrders);
+      } else if (data && Array.isArray(data.items)) {
+        setOrders(data.items);
+      } else {
+        setOrders([]);
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to load purchase orders', message: error?.message || 'An error occurred while fetching purchase orders' });
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedStatus, searchQuery, addToast]);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await apiClient.get<any>('/inventory/purchase-orders/stats');
+      if (response.data) {
+        setStats({
+          total: response.data.total ?? 0,
+          pending: response.data.pending ?? 0,
+          inTransit: response.data.inTransit ?? 0,
+          totalValue: response.data.totalValue ?? 0,
+        });
+      }
+    } catch (error: any) {
+      // Stats are non-critical; compute from loaded orders as fallback
+      const fallbackStats = {
+        total: orders.length,
+        pending: orders.filter(o => ['draft', 'pending', 'approved'].includes(o.status)).length,
+        inTransit: orders.filter(o => o.status === 'ordered' || o.status === 'partially_received').length,
+        totalValue: orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.total, 0),
+      };
+      setStats(fallbackStats);
+    }
+  }, [orders]);
 
   useEffect(() => {
-    setTimeout(() => {
-      setOrders([
-        {
-          id: '1',
-          orderNumber: 'PO-2024-001',
-          supplierId: '1',
-          supplierName: 'Fresh Foods Inc.',
-          status: 'received',
-          items: [
-            { productId: '1', productName: 'Burger Patties', sku: 'MEAT-001', quantity: 100, unitCost: 3.50, total: 350 },
-            { productId: '2', productName: 'Burger Buns', sku: 'BRD-001', quantity: 200, unitCost: 0.50, total: 100 },
-          ],
-          subtotal: 450,
-          tax: 36,
-          shipping: 25,
-          total: 511,
-          expectedDate: new Date(Date.now() - 86400000 * 5).toISOString(),
-          receivedDate: new Date(Date.now() - 86400000 * 3).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-          createdBy: 'John Doe',
-        },
-        {
-          id: '2',
-          orderNumber: 'PO-2024-002',
-          supplierId: '2',
-          supplierName: 'Beverage Distributors Co.',
-          status: 'shipped',
-          items: [
-            { productId: '3', productName: 'Coca-Cola (Case)', sku: 'BEV-001', quantity: 50, unitCost: 15, total: 750 },
-            { productId: '4', productName: 'Sprite (Case)', sku: 'BEV-002', quantity: 30, unitCost: 15, total: 450 },
-          ],
-          subtotal: 1200,
-          tax: 96,
-          shipping: 50,
-          total: 1346,
-          expectedDate: new Date(Date.now() + 86400000 * 2).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-          createdBy: 'Jane Smith',
-        },
-        {
-          id: '3',
-          orderNumber: 'PO-2024-003',
-          supplierId: '3',
-          supplierName: 'Quality Meats Ltd.',
-          status: 'confirmed',
-          items: [
-            { productId: '5', productName: 'Chicken Breast', sku: 'MEAT-002', quantity: 50, unitCost: 8, total: 400 },
-          ],
-          subtotal: 400,
-          tax: 32,
-          shipping: 30,
-          total: 462,
-          expectedDate: new Date(Date.now() + 86400000 * 5).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-          createdBy: 'John Doe',
-        },
-        {
-          id: '4',
-          orderNumber: 'PO-2024-004',
-          supplierId: '1',
-          supplierName: 'Fresh Foods Inc.',
-          status: 'draft',
-          items: [
-            { productId: '6', productName: 'Lettuce', sku: 'VEG-001', quantity: 100, unitCost: 2, total: 200 },
-            { productId: '7', productName: 'Tomatoes', sku: 'VEG-002', quantity: 80, unitCost: 3, total: 240 },
-          ],
-          subtotal: 440,
-          tax: 35.20,
-          shipping: 20,
-          total: 495.20,
-          createdAt: new Date().toISOString(),
-          createdBy: 'Jane Smith',
-        },
-      ]);
-      setIsLoading(false);
-    }, 500);
-  }, []);
+    fetchOrders();
+  }, [fetchOrders]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  const handleUpdateStatus = async (orderId: string, newStatus: string) => {
+    try {
+      setActionLoading(orderId);
+      await apiClient.put<any>(`/inventory/purchase-orders/${orderId}/status`, { status: newStatus });
+      addToast({ type: 'success', title: 'Status updated', message: `Purchase order status changed to ${newStatus}` });
+      await fetchOrders();
+      await fetchStats();
+      // Update selectedOrder if it was the one modified
+      if (selectedOrder && selectedOrder.id === orderId) {
+        try {
+          const detailResponse = await apiClient.get<any>(`/inventory/purchase-orders/${orderId}`);
+          if (detailResponse.data) {
+            setSelectedOrder(detailResponse.data);
+          }
+        } catch {
+          setSelectedOrder(null);
+        }
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to update status', message: error?.message || 'Could not update purchase order status' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReceiveOrder = async (orderId: string) => {
+    try {
+      setActionLoading(orderId);
+      await apiClient.post<any>(`/inventory/purchase-orders/${orderId}/receive`, {});
+      addToast({ type: 'success', title: 'Order received', message: 'Purchase order has been marked as received' });
+      await fetchOrders();
+      await fetchStats();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        try {
+          const detailResponse = await apiClient.get<any>(`/inventory/purchase-orders/${orderId}`);
+          if (detailResponse.data) {
+            setSelectedOrder(detailResponse.data);
+          }
+        } catch {
+          setSelectedOrder(null);
+        }
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to receive order', message: error?.message || 'Could not mark purchase order as received' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      setActionLoading(orderId);
+      await apiClient.post<any>(`/inventory/purchase-orders/${orderId}/cancel`, {});
+      addToast({ type: 'success', title: 'Order cancelled', message: 'Purchase order has been cancelled' });
+      await fetchOrders();
+      await fetchStats();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        try {
+          const detailResponse = await apiClient.get<any>(`/inventory/purchase-orders/${orderId}`);
+          if (detailResponse.data) {
+            setSelectedOrder(detailResponse.data);
+          }
+        } catch {
+          setSelectedOrder(null);
+        }
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to cancel order', message: error?.message || 'Could not cancel purchase order' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendToSupplier = async (orderId: string) => {
+    // Sending to supplier transitions draft -> pending (or ordered depending on workflow)
+    await handleUpdateStatus(orderId, 'pending');
+  };
+
+  const handleViewOrder = async (orderId: string) => {
+    try {
+      const response = await apiClient.get<any>(`/inventory/purchase-orders/${orderId}`);
+      if (response.data) {
+        setSelectedOrder(response.data);
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to load order details', message: error?.message || 'Could not load purchase order details' });
+    }
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'draft': return <FileText className="w-4 h-4" />;
-      case 'sent': return <Send className="w-4 h-4" />;
-      case 'confirmed': return <CheckCircle className="w-4 h-4" />;
-      case 'shipped': return <Truck className="w-4 h-4" />;
+      case 'pending': return <Send className="w-4 h-4" />;
+      case 'approved': return <CheckCircle className="w-4 h-4" />;
+      case 'ordered': return <Truck className="w-4 h-4" />;
+      case 'partially_received': return <Package className="w-4 h-4" />;
       case 'received': return <Package className="w-4 h-4" />;
       case 'cancelled': return <XCircle className="w-4 h-4" />;
       default: return <Clock className="w-4 h-4" />;
@@ -157,9 +238,10 @@ export default function PurchaseOrdersPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'draft': return 'bg-muted text-muted-foreground';
-      case 'sent': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400';
-      case 'confirmed': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400';
-      case 'shipped': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      case 'pending': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400';
+      case 'approved': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400';
+      case 'ordered': return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      case 'partially_received': return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
       case 'received': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
       case 'cancelled': return 'bg-destructive/10 text-destructive';
       default: return 'bg-muted text-muted-foreground';
@@ -189,11 +271,8 @@ export default function PurchaseOrdersPage() {
     return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const stats = {
-    total: orders.length,
-    pending: orders.filter(o => ['draft', 'sent', 'confirmed'].includes(o.status)).length,
-    inTransit: orders.filter(o => o.status === 'shipped').length,
-    totalValue: orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.total, 0),
+  const formatStatus = (status: string) => {
+    return status.replace(/_/g, ' ');
   };
 
   if (isLoading) {
@@ -308,9 +387,10 @@ export default function PurchaseOrdersPage() {
             >
               <option value="all">All Status</option>
               <option value="draft">Draft</option>
-              <option value="sent">Sent</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="shipped">Shipped</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="ordered">Ordered</option>
+              <option value="partially_received">Partially Received</option>
               <option value="received">Received</option>
               <option value="cancelled">Cancelled</option>
             </select>
@@ -339,7 +419,7 @@ export default function PurchaseOrdersPage() {
                   <tr
                     key={order.id}
                     className="border-b border-border hover:bg-muted/50 cursor-pointer"
-                    onClick={() => setSelectedOrder(order)}
+                    onClick={() => handleViewOrder(order.id)}
                   >
                     <td className="p-4 font-medium text-foreground">{order.orderNumber}</td>
                     <td className="p-4">
@@ -348,18 +428,23 @@ export default function PurchaseOrdersPage() {
                         <span className="text-muted-foreground">{order.supplierName}</span>
                       </div>
                     </td>
-                    <td className="p-4 text-muted-foreground">{order.items.length} items</td>
+                    <td className="p-4 text-muted-foreground">{order.items?.length ?? 0} items</td>
                     <td className="p-4 font-medium text-foreground">{formatCurrency(order.total)}</td>
                     <td className="p-4">
                       <span className={cn('inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full capitalize', getStatusColor(order.status))}>
                         {getStatusIcon(order.status)}
-                        {order.status}
+                        {formatStatus(order.status)}
                       </span>
                     </td>
                     <td className="p-4 text-muted-foreground">{formatDate(order.expectedDate)}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <button className="p-1 hover:bg-accent rounded cursor-pointer"><Eye className="w-4 h-4 text-muted-foreground" /></button>
+                        <button
+                          className="p-1 hover:bg-accent rounded cursor-pointer"
+                          onClick={() => handleViewOrder(order.id)}
+                        >
+                          <Eye className="w-4 h-4 text-muted-foreground" />
+                        </button>
                         <button className="p-1 hover:bg-accent rounded cursor-pointer"><Printer className="w-4 h-4 text-muted-foreground" /></button>
                         {order.status === 'draft' && (
                           <button className="p-1 hover:bg-accent rounded cursor-pointer"><Edit className="w-4 h-4 text-muted-foreground" /></button>
@@ -385,7 +470,7 @@ export default function PurchaseOrdersPage() {
               </div>
               <span className={cn('inline-flex items-center gap-1 px-3 py-1 rounded-full capitalize', getStatusColor(selectedOrder.status))}>
                 {getStatusIcon(selectedOrder.status)}
-                {selectedOrder.status}
+                {formatStatus(selectedOrder.status)}
               </span>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -414,7 +499,7 @@ export default function PurchaseOrdersPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedOrder.items.map((item, i) => (
+                      {(selectedOrder.items || []).map((item, i) => (
                         <tr key={i} className="border-t border-border">
                           <td className="p-3 font-medium">{item.productName}</td>
                           <td className="p-3 text-muted-foreground">{item.sku}</td>
@@ -439,8 +524,37 @@ export default function PurchaseOrdersPage() {
 
               <div className="flex gap-2 pt-4 border-t">
                 <Button variant="outline" className="flex-1 cursor-pointer" onClick={() => setSelectedOrder(null)}>Close</Button>
-                {selectedOrder.status === 'draft' && <Button className="flex-1 cursor-pointer"><Send className="w-4 h-4 mr-2" />Send to Supplier</Button>}
-                {selectedOrder.status === 'shipped' && <Button className="flex-1 cursor-pointer"><Package className="w-4 h-4 mr-2" />Mark as Received</Button>}
+                {selectedOrder.status === 'draft' && (
+                  <Button
+                    className="flex-1 cursor-pointer"
+                    disabled={actionLoading === selectedOrder.id}
+                    onClick={() => handleSendToSupplier(selectedOrder.id)}
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    {actionLoading === selectedOrder.id ? 'Sending...' : 'Send to Supplier'}
+                  </Button>
+                )}
+                {(selectedOrder.status === 'ordered' || selectedOrder.status === 'partially_received') && (
+                  <Button
+                    className="flex-1 cursor-pointer"
+                    disabled={actionLoading === selectedOrder.id}
+                    onClick={() => handleReceiveOrder(selectedOrder.id)}
+                  >
+                    <Package className="w-4 h-4 mr-2" />
+                    {actionLoading === selectedOrder.id ? 'Processing...' : 'Mark as Received'}
+                  </Button>
+                )}
+                {selectedOrder.status !== 'received' && selectedOrder.status !== 'cancelled' && (
+                  <Button
+                    variant="destructive"
+                    className="cursor-pointer"
+                    disabled={actionLoading === selectedOrder.id}
+                    onClick={() => handleCancelOrder(selectedOrder.id)}
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    {actionLoading === selectedOrder.id ? 'Cancelling...' : 'Cancel'}
+                  </Button>
+                )}
                 <Button variant="outline" className="cursor-pointer"><Printer className="w-4 h-4 mr-2" />Print</Button>
               </div>
             </CardContent>

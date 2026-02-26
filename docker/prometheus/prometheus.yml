@@ -26,44 +26,44 @@ scrape_configs:
   # API Gateway metrics
   - job_name: 'gateway'
     static_configs:
-      - targets: ['gateway:3001']
+      - targets: ['gateway:3000']
     metrics_path: /metrics
     scrape_interval: 10s
 
   # Auth Service metrics
   - job_name: 'auth-service'
     static_configs:
-      - targets: ['auth:3002']
+      - targets: ['auth:3001']
     metrics_path: /metrics
 
   # Tenant Service metrics
   - job_name: 'tenant-service'
     static_configs:
-      - targets: ['tenant:3003']
+      - targets: ['tenant:3002']
     metrics_path: /metrics
 
   # POS Service metrics
   - job_name: 'pos-service'
     static_configs:
-      - targets: ['pos:3004']
+      - targets: ['pos:3003']
     metrics_path: /metrics
 
   # Inventory Service metrics
   - job_name: 'inventory-service'
     static_configs:
-      - targets: ['inventory:3005']
+      - targets: ['inventory:3004']
     metrics_path: /metrics
 
   # Analytics Service metrics
   - job_name: 'analytics-service'
     static_configs:
-      - targets: ['analytics:3006']
+      - targets: ['analytics:3005']
     metrics_path: /metrics
 
   # Billing Service metrics
   - job_name: 'billing-service'
     static_configs:
-      - targets: ['billing:3007']
+      - targets: ['billing:3006']
     metrics_path: /metrics
 
   # Notification Service metrics

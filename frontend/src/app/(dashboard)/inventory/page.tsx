@@ -137,7 +137,6 @@ export default function InventoryPage() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load inventory data';
       setError(errorMessage);
       toast.error('Failed to load inventory data');
-      console.error('Inventory fetch error:', err);
     }
   }, []);
 
@@ -172,7 +171,6 @@ export default function InventoryPage() {
       setStockoutRisk((riskRes as any)?.data || []);
       forecastLoadedRef.current = true;
     } catch (err) {
-      console.error('Failed to load forecast data:', err);
       toast.error('Failed to load forecast data');
     } finally {
       setForecastLoading(false);
@@ -267,7 +265,6 @@ export default function InventoryPage() {
       fetchInventoryData();
     } catch (error) {
       toast.error('Failed to adjust stock. Please try again.');
-      console.error('Stock adjustment error:', error);
     }
   };
 

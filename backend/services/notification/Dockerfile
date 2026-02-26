@@ -1,6 +1,9 @@
 # ProperPOS Notification Service Dockerfile
 FROM node:20-alpine AS base
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 # Install dependencies only when needed
 FROM base AS deps
 WORKDIR /app
@@ -54,5 +57,8 @@ USER nodeuser
 WORKDIR /app/services/notification
 
 EXPOSE 3008
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:3008/health || exit 1
 
 CMD ["node", "dist/index.js"]

@@ -1,6 +1,9 @@
 # ProperPOS POS Service Dockerfile
 FROM node:20-alpine AS base
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 FROM base AS deps
 WORKDIR /app
 COPY shared ./shared
@@ -33,4 +36,8 @@ COPY --from=builder /app/services/pos/node_modules ./services/pos/node_modules
 USER nodeuser
 WORKDIR /app/services/pos
 EXPOSE 3003
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:3003/health || exit 1
+
 CMD ["node", "dist/index.js"]

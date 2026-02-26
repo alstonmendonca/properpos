@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Search,
@@ -52,8 +52,24 @@ interface Customer {
   tags: string[];
 }
 
+interface CustomersListResponse {
+  customers: Customer[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+}
+
+const SORT_MAP: Record<string, { orderBy: string; sortOrder: 'asc' | 'desc' }> = {
+  name: { orderBy: 'name', sortOrder: 'asc' },
+  spent: { orderBy: 'totalSpent', sortOrder: 'desc' },
+  orders: { orderBy: 'totalOrders', sortOrder: 'desc' },
+  recent: { orderBy: 'lastOrderDate', sortOrder: 'desc' },
+};
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -64,92 +80,71 @@ export default function CustomersPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchCustomers = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const sort = SORT_MAP[sortBy] ?? { orderBy: 'name', sortOrder: 'asc' as const };
+      const params: Record<string, any> = {
+        page,
+        limit: pageSize,
+        orderBy: sort.orderBy,
+        sortOrder: sort.sortOrder,
+      };
+
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
+
+      if (selectedStatus !== 'all') {
+        params.isActive = selectedStatus === 'active' ? 'true' : 'false';
+      }
+
+      const response = await apiClient.get<CustomersListResponse>('/customers', { params });
+      const data = response.data;
+
+      if (data) {
+        setCustomers(data.customers || []);
+        setTotalCount(data.totalCount || 0);
+        setTotalPages(data.totalPages || 1);
+      } else {
+        setCustomers([]);
+        setTotalCount(0);
+        setTotalPages(1);
+      }
+    } catch (error) {
+      toast.error('Failed to load customers', 'Could not retrieve customer data. Please try again.');
+      setCustomers([]);
+      setTotalCount(0);
+      setTotalPages(1);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [page, pageSize, searchQuery, selectedStatus, sortBy]);
 
   useEffect(() => {
-    // Mock data fetch
-    setTimeout(() => {
-      setCustomers([
-        {
-          id: '1',
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john.doe@example.com',
-          phone: '+1 (555) 123-4567',
-          address: { street: '123 Main St', city: 'New York', state: 'NY', zipCode: '10001' },
-          totalOrders: 24,
-          totalSpent: 1250.50,
-          loyaltyPoints: 2500,
-          lastOrderDate: new Date(Date.now() - 86400000).toISOString(),
-          status: 'active',
-          createdAt: new Date(Date.now() - 86400000 * 90).toISOString(),
-          tags: ['VIP', 'Regular'],
-        },
-        {
-          id: '2',
-          firstName: 'Jane',
-          lastName: 'Smith',
-          email: 'jane.smith@example.com',
-          phone: '+1 (555) 234-5678',
-          totalOrders: 15,
-          totalSpent: 890.25,
-          loyaltyPoints: 1780,
-          lastOrderDate: new Date(Date.now() - 86400000 * 3).toISOString(),
-          status: 'active',
-          createdAt: new Date(Date.now() - 86400000 * 60).toISOString(),
-          tags: ['Regular'],
-        },
-        {
-          id: '3',
-          firstName: 'Bob',
-          lastName: 'Wilson',
-          email: 'bob.wilson@example.com',
-          phone: '+1 (555) 345-6789',
-          address: { street: '456 Oak Ave', city: 'Los Angeles', state: 'CA', zipCode: '90001' },
-          totalOrders: 8,
-          totalSpent: 420.00,
-          loyaltyPoints: 840,
-          lastOrderDate: new Date(Date.now() - 86400000 * 7).toISOString(),
-          status: 'active',
-          createdAt: new Date(Date.now() - 86400000 * 45).toISOString(),
-          tags: [],
-        },
-        {
-          id: '4',
-          firstName: 'Alice',
-          lastName: 'Brown',
-          email: 'alice.brown@example.com',
-          totalOrders: 3,
-          totalSpent: 156.75,
-          loyaltyPoints: 310,
-          lastOrderDate: new Date(Date.now() - 86400000 * 30).toISOString(),
-          status: 'inactive',
-          createdAt: new Date(Date.now() - 86400000 * 120).toISOString(),
-          tags: [],
-        },
-        {
-          id: '5',
-          firstName: 'Charlie',
-          lastName: 'Davis',
-          email: 'charlie.davis@example.com',
-          phone: '+1 (555) 456-7890',
-          totalOrders: 45,
-          totalSpent: 3200.00,
-          loyaltyPoints: 6400,
-          lastOrderDate: new Date(Date.now() - 86400000).toISOString(),
-          status: 'active',
-          createdAt: new Date(Date.now() - 86400000 * 180).toISOString(),
-          tags: ['VIP', 'Top Spender'],
-        },
-      ]);
-      setIsLoading(false);
-    }, 500);
-  }, []);
+    fetchCustomers();
+  }, [fetchCustomers]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, selectedStatus, sortBy, pageSize]);
+
+  const handleSearchChange = (value: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(value);
+    }, 300);
+  };
 
   const toggleSelectAll = () => {
-    if (selectedCustomers.length === filteredCustomers.length) {
+    if (selectedCustomers.length === customers.length) {
       setSelectedCustomers([]);
     } else {
-      setSelectedCustomers(filteredCustomers.map(c => c.id));
+      setSelectedCustomers(customers.map(c => c.id));
     }
   };
 
@@ -159,12 +154,17 @@ export default function CustomersPage() {
     );
   };
 
-  const refreshCustomers = () => {
-    // Re-trigger the mock data fetch (in production, this would re-fetch from API)
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 300);
+  const handleDeactivateCustomer = async (customerId: string) => {
+    const confirmed = window.confirm('Are you sure you want to deactivate this customer?');
+    if (!confirmed) return;
+
+    try {
+      await apiClient.post(`/customers/${customerId}/deactivate`, {});
+      toast.success('Customer deactivated', 'The customer has been deactivated.');
+      fetchCustomers();
+    } catch (error) {
+      toast.error('Deactivation failed', 'Could not deactivate the customer. Please try again.');
+    }
   };
 
   const handleBulkUpdate = async (updates: Record<string, any>) => {
@@ -177,9 +177,8 @@ export default function CustomersPage() {
       toast.success('Customers updated', `Successfully updated ${selectedCustomers.length} customers.`);
       setSelectedCustomers([]);
       setShowBulkEdit(false);
-      refreshCustomers();
+      fetchCustomers();
     } catch (error) {
-      console.error('Bulk update failed:', error);
       toast.error('Bulk update failed', 'Could not update the selected customers. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -199,9 +198,8 @@ export default function CustomersPage() {
       });
       toast.success('Customers deactivated', `Successfully deactivated ${selectedCustomers.length} customers.`);
       setSelectedCustomers([]);
-      refreshCustomers();
+      fetchCustomers();
     } catch (error) {
-      console.error('Bulk deactivate failed:', error);
       toast.error('Deactivation failed', 'Could not deactivate the selected customers. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -227,47 +225,11 @@ export default function CustomersPage() {
       toast.success('Export complete', `Exported ${selectedCustomers.length} customers.`);
       setSelectedCustomers([]);
     } catch (error) {
-      console.error('Bulk export failed:', error);
       toast.error('Export failed', 'Could not export the selected customers. Please try again.');
     } finally {
       setBulkLoading(false);
     }
   };
-
-  const filteredCustomers = customers
-    .filter(customer => {
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const fullName = `${customer.firstName} ${customer.lastName}`.toLowerCase();
-        if (!fullName.includes(query) &&
-            !customer.email.toLowerCase().includes(query) &&
-            !customer.phone?.includes(query)) {
-          return false;
-        }
-      }
-      if (selectedStatus !== 'all' && customer.status !== selectedStatus) {
-        return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'name': return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
-        case 'spent': return b.totalSpent - a.totalSpent;
-        case 'orders': return b.totalOrders - a.totalOrders;
-        case 'recent': return new Date(b.lastOrderDate || 0).getTime() - new Date(a.lastOrderDate || 0).getTime();
-        default: return 0;
-      }
-    });
-
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize));
-  const paginatedCustomers = filteredCustomers.slice((page - 1) * pageSize, page * pageSize);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, selectedStatus, sortBy, pageSize]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Never';
@@ -275,15 +237,14 @@ export default function CustomersPage() {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  // Stats
   const stats = {
-    total: customers.length,
+    total: totalCount,
     active: customers.filter(c => c.status === 'active').length,
     totalRevenue: customers.reduce((sum, c) => sum + c.totalSpent, 0),
     avgSpend: customers.length > 0 ? customers.reduce((sum, c) => sum + c.totalSpent, 0) / customers.length : 0,
   };
 
-  if (isLoading) {
+  if (isLoading && customers.length === 0) {
     return <SkeletonCustomers />;
   }
 
@@ -380,8 +341,8 @@ export default function CustomersPage() {
               <input
                 type="text"
                 placeholder="Search by name, email, or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                defaultValue={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
               />
             </div>
@@ -442,7 +403,7 @@ export default function CustomersPage() {
       {/* Customers List */}
       <Card>
         <CardContent className="p-0">
-          {filteredCustomers.length === 0 ? (
+          {customers.length === 0 && !isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Users className="h-12 w-12 text-muted-foreground/50 mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-1">No customers yet</h3>
@@ -466,7 +427,7 @@ export default function CustomersPage() {
                     <th className="p-4 text-left">
                       <input
                         type="checkbox"
-                        checked={selectedCustomers.length === filteredCustomers.length && filteredCustomers.length > 0}
+                        checked={selectedCustomers.length === customers.length && customers.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded border-input cursor-pointer"
                       />
@@ -482,7 +443,7 @@ export default function CustomersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedCustomers.map(customer => (
+                  {customers.map(customer => (
                     <tr
                       key={customer.id}
                       className="border-b border-border hover:bg-muted/50 cursor-pointer"
@@ -562,7 +523,10 @@ export default function CustomersPage() {
                               <Edit className="w-4 h-4 text-muted-foreground" />
                             </button>
                           </Link>
-                          <button className="p-1 hover:bg-accent rounded cursor-pointer">
+                          <button
+                            className="p-1 hover:bg-accent rounded cursor-pointer"
+                            onClick={() => handleDeactivateCustomer(customer.id)}
+                          >
                             <Trash2 className="w-4 h-4 text-destructive" />
                           </button>
                         </div>
@@ -577,14 +541,14 @@ export default function CustomersPage() {
       </Card>
 
       {/* Pagination */}
-      {filteredCustomers.length > 0 && (
+      {customers.length > 0 && (
         <Pagination
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
           pageSize={pageSize}
           onPageSizeChange={setPageSize}
-          totalItems={filteredCustomers.length}
+          totalItems={totalCount}
           itemName="customers"
         />
       )}

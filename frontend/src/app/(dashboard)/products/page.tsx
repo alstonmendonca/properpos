@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Plus,
@@ -27,24 +27,17 @@ import { BulkActionBar } from '@/components/ui/BulkActionBar';
 import { BulkEditModal } from '@/components/ui/BulkEditModal';
 import { apiClient } from '@/lib/api-client';
 import { toast } from '@/store/ui';
+import type { Product, Category } from '@properpos/shared';
 
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  price: number;
-  cost: number;
-  stock: number;
-  status: 'active' | 'inactive' | 'out_of_stock';
-  image?: string;
-  createdAt: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  productCount: number;
+interface ProductsResponse {
+  data: Product[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
 }
 
 export default function ProductsPage() {
@@ -62,63 +55,107 @@ export default function ProductsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    // Mock data fetch
-    setTimeout(() => {
-      setCategories([
-        { id: '1', name: 'Food', productCount: 45 },
-        { id: '2', name: 'Beverages', productCount: 32 },
-        { id: '3', name: 'Desserts', productCount: 18 },
-        { id: '4', name: 'Sides', productCount: 24 },
-      ]);
-
-      setProducts([
-        { id: '1', name: 'Classic Burger', sku: 'BURG-001', category: 'Food', price: 12.99, cost: 4.50, stock: 150, status: 'active', createdAt: new Date().toISOString() },
-        { id: '2', name: 'Caesar Salad', sku: 'SAL-001', category: 'Food', price: 9.99, cost: 3.00, stock: 80, status: 'active', createdAt: new Date().toISOString() },
-        { id: '3', name: 'Coca-Cola', sku: 'BEV-001', category: 'Beverages', price: 2.99, cost: 0.80, stock: 500, status: 'active', createdAt: new Date().toISOString() },
-        { id: '4', name: 'Chocolate Cake', sku: 'DES-001', category: 'Desserts', price: 6.99, cost: 2.50, stock: 0, status: 'out_of_stock', createdAt: new Date().toISOString() },
-        { id: '5', name: 'French Fries', sku: 'SID-001', category: 'Sides', price: 4.99, cost: 1.20, stock: 200, status: 'active', createdAt: new Date().toISOString() },
-        { id: '6', name: 'Grilled Chicken', sku: 'FOOD-002', category: 'Food', price: 14.99, cost: 5.50, stock: 45, status: 'active', createdAt: new Date().toISOString() },
-        { id: '7', name: 'Iced Tea', sku: 'BEV-002', category: 'Beverages', price: 3.49, cost: 0.60, stock: 300, status: 'active', createdAt: new Date().toISOString() },
-        { id: '8', name: 'Discontinued Item', sku: 'OLD-001', category: 'Food', price: 9.99, cost: 4.00, stock: 10, status: 'inactive', createdAt: new Date().toISOString() },
-      ]);
-
-      setIsLoading(false);
-    }, 500);
+  const fetchCategories = useCallback(async () => {
+    try {
+      const data = await apiClient.getCategories();
+      setCategories(data);
+    } catch (error) {
+    }
   }, []);
 
-  const filteredProducts = products
-    .filter(p => {
-      if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase()) && !p.sku.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false;
-      }
-      if (selectedCategory !== 'all' && p.category !== selectedCategory) {
-        return false;
-      }
-      if (selectedStatus !== 'all' && p.status !== selectedStatus) {
-        return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'name': return a.name.localeCompare(b.name);
-        case 'price': return b.price - a.price;
-        case 'stock': return a.stock - b.stock;
-        case 'newest': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        default: return 0;
-      }
-    });
+  const fetchProducts = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const sortOrder = sortBy === 'price' || sortBy === 'newest' ? 'desc' : 'asc';
+      const apiSortBy = sortBy === 'newest' ? 'createdAt' : sortBy;
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-  const paginatedProducts = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
+      const params: Record<string, any> = {
+        page,
+        limit: pageSize,
+        sortBy: apiSortBy,
+        sortOrder,
+      };
 
-  // Reset to page 1 when filters change
+      if (searchQuery) {
+        params.search = searchQuery;
+      }
+
+      if (selectedCategory !== 'all') {
+        params.categoryId = selectedCategory;
+      }
+
+      if (selectedStatus !== 'all') {
+        if (selectedStatus === 'active') {
+          params.isActive = 'true';
+        } else if (selectedStatus === 'inactive') {
+          params.isActive = 'false';
+        } else if (selectedStatus === 'out_of_stock') {
+          params.inStock = 'false';
+          params.isActive = 'true';
+        }
+      }
+
+      const response = await apiClient.get<ProductsResponse>('/products', { params });
+      const result = response.data;
+
+      if (result) {
+        setProducts(result.data || []);
+        setTotalItems(result.meta?.total || 0);
+        setTotalPages(result.meta?.totalPages || 1);
+      } else {
+        setProducts([]);
+        setTotalItems(0);
+        setTotalPages(1);
+      }
+    } catch (error) {
+      toast.error('Failed to load products', 'Could not retrieve products from the server.');
+      setProducts([]);
+      setTotalItems(0);
+      setTotalPages(1);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [page, pageSize, searchQuery, selectedCategory, selectedStatus, sortBy]);
+
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
   useEffect(() => {
     setPage(1);
   }, [searchQuery, selectedCategory, selectedStatus, sortBy, pageSize]);
+
+  const handleSearchChange = (value: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(value);
+    }, 300);
+  };
+
+  const getProductStatus = (product: Product): 'active' | 'inactive' | 'out_of_stock' => {
+    if (!product.availability?.isActive) return 'inactive';
+    const totalStock = product.inventory?.stockLevels?.reduce(
+      (sum, level) => sum + (level.currentStock - level.reservedStock), 0
+    ) ?? 0;
+    if (product.inventory?.trackInventory && totalStock <= 0) return 'out_of_stock';
+    return 'active';
+  };
+
+  const getProductStock = (product: Product): number => {
+    return product.inventory?.stockLevels?.reduce(
+      (sum, level) => sum + level.currentStock, 0
+    ) ?? 0;
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -134,10 +171,10 @@ export default function ProductsPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedProducts.length === filteredProducts.length) {
+    if (selectedProducts.length === products.length) {
       setSelectedProducts([]);
     } else {
-      setSelectedProducts(filteredProducts.map(p => p.id));
+      setSelectedProducts(products.map(p => p.id));
     }
   };
 
@@ -147,12 +184,17 @@ export default function ProductsPage() {
     );
   };
 
-  const refreshProducts = () => {
-    // Re-trigger the mock data fetch (in production, this would re-fetch from API)
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 300);
+  const handleDeleteProduct = async (productId: string) => {
+    const confirmed = window.confirm('Are you sure you want to delete this product? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      await apiClient.deleteProduct(productId);
+      toast.success('Product deleted', 'The product has been successfully deleted.');
+      fetchProducts();
+    } catch (error) {
+      toast.error('Delete failed', 'Could not delete the product. Please try again.');
+    }
   };
 
   const handleBulkEdit = async (updates: Record<string, any>) => {
@@ -165,9 +207,8 @@ export default function ProductsPage() {
       toast.success('Products updated', `Successfully updated ${selectedProducts.length} products.`);
       setSelectedProducts([]);
       setShowBulkEdit(false);
-      refreshProducts();
+      fetchProducts();
     } catch (error) {
-      console.error('Bulk edit failed:', error);
       toast.error('Bulk edit failed', 'Could not update the selected products. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -188,9 +229,8 @@ export default function ProductsPage() {
       });
       toast.success('Products deleted', `Successfully deleted ${selectedProducts.length} products.`);
       setSelectedProducts([]);
-      refreshProducts();
+      fetchProducts();
     } catch (error) {
-      console.error('Bulk delete failed:', error);
       toast.error('Bulk delete failed', 'Could not delete the selected products. Please try again.');
     } finally {
       setBulkLoading(false);
@@ -216,14 +256,13 @@ export default function ProductsPage() {
       toast.success('Export complete', `Exported ${selectedProducts.length} products.`);
       setSelectedProducts([]);
     } catch (error) {
-      console.error('Bulk export failed:', error);
       toast.error('Export failed', 'Could not export the selected products. Please try again.');
     } finally {
       setBulkLoading(false);
     }
   };
 
-  if (isLoading) {
+  if (isLoading && products.length === 0) {
     return <SkeletonProducts />;
   }
 
@@ -265,8 +304,8 @@ export default function ProductsPage() {
               <input
                 type="text"
                 placeholder="Search products by name or SKU..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                defaultValue={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
               />
             </div>
@@ -280,7 +319,7 @@ export default function ProductsPage() {
               >
                 <option value="all">All Categories</option>
                 {categories.map(cat => (
-                  <option key={cat.id} value={cat.name}>{cat.name}</option>
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
 
@@ -364,7 +403,7 @@ export default function ProductsPage() {
       </Card>
 
       {/* Products List/Grid */}
-      {filteredProducts.length === 0 ? (
+      {products.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <Package className="h-12 w-12 text-muted-foreground/50 mb-4" />
@@ -392,7 +431,7 @@ export default function ProductsPage() {
                     <th className="p-4 text-left">
                       <input
                         type="checkbox"
-                        checked={selectedProducts.length === filteredProducts.length && filteredProducts.length > 0}
+                        checked={selectedProducts.length === products.length && products.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded border-input cursor-pointer"
                       />
@@ -408,63 +447,80 @@ export default function ProductsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedProducts.map(product => (
-                    <tr
-                      key={product.id}
-                      className="border-b border-border hover:bg-muted/50 cursor-pointer"
-                    >
-                      <td className="p-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedProducts.includes(product.id)}
-                          onChange={() => toggleSelectProduct(product.id)}
-                          className="rounded border-input cursor-pointer"
-                        />
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
-                            <Package className="w-5 h-5 text-muted-foreground" />
+                  {products.map(product => {
+                    const status = getProductStatus(product);
+                    const stock = getProductStock(product);
+                    return (
+                      <tr
+                        key={product.id}
+                        className="border-b border-border hover:bg-muted/50 cursor-pointer"
+                      >
+                        <td className="p-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedProducts.includes(product.id)}
+                            onChange={() => toggleSelectProduct(product.id)}
+                            className="rounded border-input cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center overflow-hidden">
+                              {product.media?.images?.[0]?.url ? (
+                                <img
+                                  src={product.media.images[0].url}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Package className="w-5 h-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <span className="font-medium text-foreground">{product.name}</span>
                           </div>
-                          <span className="font-medium text-foreground">{product.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-4 text-muted-foreground">{product.sku}</td>
-                      <td className="p-4 text-muted-foreground">{product.category}</td>
-                      <td className="p-4 font-medium text-foreground">${product.price.toFixed(2)}</td>
-                      <td className="p-4 text-muted-foreground">${product.cost.toFixed(2)}</td>
-                      <td className="p-4">
-                        <span className={cn(
-                          'font-medium',
-                          product.stock <= 10 ? 'text-red-600' : product.stock <= 50 ? 'text-yellow-600' : 'text-foreground'
-                        )}>
-                          {product.stock}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span className={cn('text-xs px-2 py-1 rounded-full', getStatusBadge(product.status))}>
-                          {product.status.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <Link href={`/products/${product.id}`} className="cursor-pointer">
-                            <button className="p-1 hover:bg-accent rounded cursor-pointer">
-                              <Eye className="w-4 h-4 text-muted-foreground" />
+                        </td>
+                        <td className="p-4 text-muted-foreground">{product.sku || '-'}</td>
+                        <td className="p-4 text-muted-foreground">{product.category?.name || '-'}</td>
+                        <td className="p-4 font-medium text-foreground">${product.pricing.basePrice.toFixed(2)}</td>
+                        <td className="p-4 text-muted-foreground">
+                          {product.pricing.costPrice != null ? `$${product.pricing.costPrice.toFixed(2)}` : '-'}
+                        </td>
+                        <td className="p-4">
+                          <span className={cn(
+                            'font-medium',
+                            stock <= 10 ? 'text-red-600' : stock <= 50 ? 'text-yellow-600' : 'text-foreground'
+                          )}>
+                            {product.inventory?.trackInventory ? stock : 'N/A'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className={cn('text-xs px-2 py-1 rounded-full', getStatusBadge(status))}>
+                            {status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <Link href={`/products/${product.id}`} className="cursor-pointer">
+                              <button className="p-1 hover:bg-accent rounded cursor-pointer">
+                                <Eye className="w-4 h-4 text-muted-foreground" />
+                              </button>
+                            </Link>
+                            <Link href={`/products/${product.id}/edit`} className="cursor-pointer">
+                              <button className="p-1 hover:bg-accent rounded cursor-pointer">
+                                <Edit className="w-4 h-4 text-muted-foreground" />
+                              </button>
+                            </Link>
+                            <button
+                              onClick={() => handleDeleteProduct(product.id)}
+                              className="p-1 hover:bg-accent rounded cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-400" />
                             </button>
-                          </Link>
-                          <Link href={`/products/${product.id}/edit`} className="cursor-pointer">
-                            <button className="p-1 hover:bg-accent rounded cursor-pointer">
-                              <Edit className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          </Link>
-                          <button className="p-1 hover:bg-accent rounded cursor-pointer">
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -472,46 +528,60 @@ export default function ProductsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {paginatedProducts.map(product => (
-            <Card key={product.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
-              <div className="aspect-square bg-muted flex items-center justify-center">
-                <Package className="w-12 h-12 text-muted-foreground" />
-              </div>
-              <CardContent className="p-4">
-                <h3 className="font-medium text-foreground truncate">{product.name}</h3>
-                <p className="text-sm text-muted-foreground">{product.sku}</p>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="font-bold text-foreground">${product.price.toFixed(2)}</span>
-                  <span className={cn('text-xs px-2 py-1 rounded-full', getStatusBadge(product.status))}>
-                    {product.status.replace('_', ' ')}
-                  </span>
+          {products.map(product => {
+            const status = getProductStatus(product);
+            return (
+              <Card key={product.id} className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                <div className="aspect-square bg-muted flex items-center justify-center overflow-hidden">
+                  {product.media?.images?.[0]?.url ? (
+                    <img
+                      src={product.media.images[0].url}
+                      alt={product.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Package className="w-12 h-12 text-muted-foreground" />
+                  )}
                 </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <Link href={`/products/${product.id}/edit`} className="flex-1 cursor-pointer">
-                    <Button variant="outline" size="sm" className="w-full cursor-pointer">
-                      <Edit className="w-3 h-3 mr-1" />
-                      Edit
-                    </Button>
-                  </Link>
-                  <button className="p-2 hover:bg-accent rounded border border-border cursor-pointer">
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                <CardContent className="p-4">
+                  <h3 className="font-medium text-foreground truncate">{product.name}</h3>
+                  <p className="text-sm text-muted-foreground">{product.sku || '-'}</p>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="font-bold text-foreground">${product.pricing.basePrice.toFixed(2)}</span>
+                    <span className={cn('text-xs px-2 py-1 rounded-full', getStatusBadge(status))}>
+                      {status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Link href={`/products/${product.id}/edit`} className="flex-1 cursor-pointer">
+                      <Button variant="outline" size="sm" className="w-full cursor-pointer">
+                        <Edit className="w-3 h-3 mr-1" />
+                        Edit
+                      </Button>
+                    </Link>
+                    <button
+                      onClick={() => handleDeleteProduct(product.id)}
+                      className="p-2 hover:bg-accent rounded border border-border cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-400" />
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
       {/* Pagination */}
-      {filteredProducts.length > 0 && (
+      {totalItems > 0 && (
         <Pagination
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
           pageSize={pageSize}
           onPageSizeChange={setPageSize}
-          totalItems={filteredProducts.length}
+          totalItems={totalItems}
           itemName="products"
         />
       )}
@@ -529,7 +599,7 @@ export default function ProductsPage() {
             key: 'category',
             label: 'Category',
             type: 'select',
-            options: categories.map((cat) => ({ value: cat.name, label: cat.name })),
+            options: categories.map((cat) => ({ value: cat.id, label: cat.name })),
             placeholder: 'Select category',
           },
           {

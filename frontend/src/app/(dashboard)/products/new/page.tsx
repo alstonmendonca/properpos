@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 import {
   priceValidation,
   skuValidation,
@@ -287,8 +288,42 @@ export default function NewProductPage() {
     setIsSubmitting(true);
 
     try {
-      // API call would go here
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await apiClient.createProduct({
+        name: form.name,
+        sku: form.sku || undefined,
+        description: form.description || undefined,
+        categoryId: form.category,
+        barcode: form.barcode || undefined,
+        tags: [],
+        pricing: {
+          basePrice: parseFloat(form.price),
+          costPrice: form.cost ? parseFloat(form.cost) : undefined,
+          variants: form.variants.length > 0 ? form.variants.map((v: any) => ({
+            name: v.name,
+            price: parseFloat(v.price),
+            sku: v.sku || undefined,
+          })) : undefined,
+        },
+        tax: {
+          taxable: parseFloat(form.taxRate) > 0,
+          taxCategory: 'standard',
+          inclusive: false,
+        },
+        inventory: {
+          trackInventory: form.trackInventory,
+          unit: form.unit,
+          stockLevels: [{
+            locationId: 'default',
+            currentStock: parseInt(form.stock),
+            reorderLevel: parseInt(form.minStock),
+            maxStock: parseInt(form.stock) * 5,
+          }],
+        },
+        availability: {
+          isActive: form.status === 'active',
+          availableLocations: ['default'],
+        },
+      });
 
       addToast({
         type: 'success',

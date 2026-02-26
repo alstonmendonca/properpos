@@ -205,7 +205,6 @@ export default function AnalyticsPage() {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load analytics data';
       setError(errorMessage);
       toast.error('Failed to load analytics data');
-      console.error('Analytics fetch error:', err);
     }
   }, [dateRange]);
 

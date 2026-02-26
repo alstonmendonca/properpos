@@ -9,16 +9,16 @@ const http = require('http');
 const https = require('https');
 
 const services = [
-  { name: 'Gateway', url: 'http://localhost:3001/health' },
-  { name: 'Auth', url: 'http://localhost:3002/health' },
-  { name: 'Tenant', url: 'http://localhost:3003/health' },
-  { name: 'POS', url: 'http://localhost:3004/health' },
-  { name: 'Inventory', url: 'http://localhost:3005/health' },
-  { name: 'Analytics', url: 'http://localhost:3006/health' },
-  { name: 'Billing', url: 'http://localhost:3007/health' },
+  { name: 'Gateway', url: 'http://localhost:3000/health' },
+  { name: 'Auth', url: 'http://localhost:3001/health' },
+  { name: 'Tenant', url: 'http://localhost:3002/health' },
+  { name: 'POS', url: 'http://localhost:3003/health' },
+  { name: 'Inventory', url: 'http://localhost:3004/health' },
+  { name: 'Analytics', url: 'http://localhost:3005/health' },
+  { name: 'Billing', url: 'http://localhost:3006/health' },
   { name: 'Notification', url: 'http://localhost:3008/health' },
   { name: 'Audit', url: 'http://localhost:3009/health' },
-  { name: 'Frontend', url: 'http://localhost:3000' },
+  { name: 'Frontend', url: 'http://localhost:8080' },
 ];
 
 const MAX_RETRIES = 60;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface Supplier {
   id: string;
@@ -57,83 +58,71 @@ export default function SuppliersPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchSuppliers = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiClient.get<any>('/inventory/suppliers');
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setSuppliers(data);
+      } else if (data && Array.isArray(data.suppliers)) {
+        setSuppliers(data.suppliers);
+      } else if (data && Array.isArray(data.items)) {
+        setSuppliers(data.items);
+      } else {
+        setSuppliers([]);
+      }
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to load suppliers', message: error?.message || 'Please try again later.' });
+      setSuppliers([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addToast]);
 
   useEffect(() => {
-    setTimeout(() => {
-      setSuppliers([
-        {
-          id: '1',
-          name: 'Fresh Foods Inc.',
-          code: 'SUP-001',
-          contactPerson: 'John Smith',
-          email: 'john@freshfoods.com',
-          phone: '+1 (555) 123-4567',
-          address: { street: '100 Warehouse Blvd', city: 'Chicago', state: 'IL', zipCode: '60601', country: 'United States' },
-          paymentTerms: 'Net 30',
-          leadTime: 3,
-          minOrderValue: 500,
-          status: 'active',
-          totalOrders: 45,
-          totalSpent: 125000,
-          lastOrderDate: new Date(Date.now() - 86400000 * 5).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 365).toISOString(),
-        },
-        {
-          id: '2',
-          name: 'Beverage Distributors Co.',
-          code: 'SUP-002',
-          contactPerson: 'Sarah Johnson',
-          email: 'sarah@bevdist.com',
-          phone: '+1 (555) 234-5678',
-          address: { street: '250 Distribution Way', city: 'New York', state: 'NY', zipCode: '10001', country: 'United States' },
-          paymentTerms: 'Net 15',
-          leadTime: 2,
-          minOrderValue: 300,
-          status: 'active',
-          totalOrders: 78,
-          totalSpent: 89000,
-          lastOrderDate: new Date(Date.now() - 86400000 * 2).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 300).toISOString(),
-        },
-        {
-          id: '3',
-          name: 'Quality Meats Ltd.',
-          code: 'SUP-003',
-          contactPerson: 'Mike Brown',
-          email: 'mike@qualitymeats.com',
-          phone: '+1 (555) 345-6789',
-          address: { street: '75 Meat Packing District', city: 'Los Angeles', state: 'CA', zipCode: '90001', country: 'United States' },
-          paymentTerms: 'Net 7',
-          leadTime: 1,
-          minOrderValue: 1000,
-          status: 'active',
-          totalOrders: 32,
-          totalSpent: 156000,
-          lastOrderDate: new Date(Date.now() - 86400000 * 1).toISOString(),
-          createdAt: new Date(Date.now() - 86400000 * 200).toISOString(),
-        },
-        {
-          id: '4',
-          name: 'Packaging Solutions',
-          code: 'SUP-004',
-          contactPerson: 'Lisa Chen',
-          email: 'lisa@packsol.com',
-          phone: '+1 (555) 456-7890',
-          address: { street: '500 Industrial Park', city: 'Houston', state: 'TX', zipCode: '77001', country: 'United States' },
-          paymentTerms: 'Net 45',
-          leadTime: 7,
-          minOrderValue: 200,
-          status: 'inactive',
-          totalOrders: 12,
-          totalSpent: 15000,
-          lastOrderDate: new Date(Date.now() - 86400000 * 60).toISOString(),
-          notes: 'Temporarily inactive - quality issues',
-          createdAt: new Date(Date.now() - 86400000 * 180).toISOString(),
-        },
-      ]);
-      setIsLoading(false);
-    }, 500);
-  }, []);
+    fetchSuppliers();
+  }, [fetchSuppliers]);
+
+  const handleDelete = async (supplierId: string) => {
+    if (!confirm('Are you sure you want to delete this supplier?')) return;
+    try {
+      setDeletingId(supplierId);
+      await apiClient.delete(`/inventory/suppliers/${supplierId}`);
+      setSuppliers(prev => prev.filter(s => s.id !== supplierId));
+      addToast({ type: 'success', title: 'Supplier deleted', message: 'The supplier has been removed.' });
+    } catch (error: any) {
+      addToast({ type: 'error', title: 'Failed to delete supplier', message: error?.message || 'Please try again.' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSave = async (supplierData: Supplier) => {
+    try {
+      if (editingSupplier) {
+        const response = await apiClient.put<any>(`/inventory/suppliers/${editingSupplier.id}`, supplierData);
+        const updated = response.data || supplierData;
+        setSuppliers(prev => prev.map(s => s.id === editingSupplier.id ? { ...s, ...updated } : s));
+        addToast({ type: 'success', title: 'Supplier updated', message: `${supplierData.name} has been updated.` });
+      } else {
+        const response = await apiClient.post<any>('/inventory/suppliers', supplierData);
+        const created = response.data || { ...supplierData, id: Date.now().toString() };
+        setSuppliers(prev => [...prev, created]);
+        addToast({ type: 'success', title: 'Supplier created', message: `${supplierData.name} has been added.` });
+      }
+      setShowModal(false);
+      setEditingSupplier(null);
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: editingSupplier ? 'Failed to update supplier' : 'Failed to create supplier',
+        message: error?.message || 'Please try again.',
+      });
+    }
+  };
 
   const filteredSuppliers = suppliers.filter(supplier => {
     if (searchQuery) {
@@ -162,8 +151,8 @@ export default function SuppliersPage() {
   const stats = {
     total: suppliers.length,
     active: suppliers.filter(s => s.status === 'active').length,
-    totalSpent: suppliers.reduce((sum, s) => sum + s.totalSpent, 0),
-    totalOrders: suppliers.reduce((sum, s) => sum + s.totalOrders, 0),
+    totalSpent: suppliers.reduce((sum, s) => sum + (s.totalSpent || 0), 0),
+    totalOrders: suppliers.reduce((sum, s) => sum + (s.totalOrders || 0), 0),
   };
 
   if (isLoading) {
@@ -326,11 +315,11 @@ export default function SuppliersPage() {
 
               <div className="grid grid-cols-3 gap-2 p-3 bg-muted/50 rounded-lg mb-4">
                 <div className="text-center">
-                  <p className="text-lg font-bold text-foreground">{supplier.totalOrders}</p>
+                  <p className="text-lg font-bold text-foreground">{supplier.totalOrders || 0}</p>
                   <p className="text-xs text-muted-foreground">Orders</p>
                 </div>
                 <div className="text-center border-x border-border">
-                  <p className="text-lg font-bold text-foreground">{formatCurrency(supplier.totalSpent)}</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(supplier.totalSpent || 0)}</p>
                   <p className="text-xs text-muted-foreground">Total Spent</p>
                 </div>
                 <div className="text-center">
@@ -350,7 +339,13 @@ export default function SuppliersPage() {
                     Orders
                   </Button>
                 </Link>
-                <Button variant="outline" size="sm" className="text-red-600 cursor-pointer">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 cursor-pointer"
+                  disabled={deletingId === supplier.id}
+                  onClick={() => handleDelete(supplier.id)}
+                >
                   <Trash2 className="w-4 h-4" />
                 </Button>
               </div>
@@ -379,30 +374,21 @@ export default function SuppliersPage() {
         <SupplierModal
           supplier={editingSupplier}
           onClose={() => { setShowModal(false); setEditingSupplier(null); }}
-          onSave={(supplier) => {
-            if (editingSupplier) {
-              setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
-              addToast({ type: 'success', title: 'Supplier updated' });
-            } else {
-              setSuppliers(prev => [...prev, { ...supplier, id: Date.now().toString() }]);
-              addToast({ type: 'success', title: 'Supplier created' });
-            }
-            setShowModal(false);
-            setEditingSupplier(null);
-          }}
+          onSave={handleSave}
         />
       )}
     </div>
   );
 }
 
-function SupplierModal({ supplier, onClose, onSave }: { supplier: Supplier | null; onClose: () => void; onSave: (s: Supplier) => void }) {
+function SupplierModal({ supplier, onClose, onSave }: { supplier: Supplier | null; onClose: () => void; onSave: (s: Supplier) => Promise<void> }) {
   const [form, setForm] = useState<Partial<Supplier>>(supplier || {
     name: '', code: '', contactPerson: '', email: '', phone: '',
     address: { street: '', city: '', state: '', zipCode: '', country: 'United States' },
     paymentTerms: 'Net 30', leadTime: 3, minOrderValue: 0, status: 'active',
     totalOrders: 0, totalSpent: 0, createdAt: new Date().toISOString(),
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -414,6 +400,16 @@ function SupplierModal({ supplier, onClose, onSave }: { supplier: Supplier | nul
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      await onSave(form as Supplier);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -421,7 +417,7 @@ function SupplierModal({ supplier, onClose, onSave }: { supplier: Supplier | nul
           <CardTitle>{supplier ? 'Edit Supplier' : 'Add Supplier'}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => { e.preventDefault(); onSave(form as Supplier); }} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Supplier Name *</label>
@@ -493,8 +489,10 @@ function SupplierModal({ supplier, onClose, onSave }: { supplier: Supplier | nul
               </select>
             </div>
             <div className="flex gap-2 pt-4">
-              <Button type="button" variant="outline" className="flex-1 cursor-pointer" onClick={onClose}>Cancel</Button>
-              <Button type="submit" className="flex-1 cursor-pointer">{supplier ? 'Save Changes' : 'Create Supplier'}</Button>
+              <Button type="button" variant="outline" className="flex-1 cursor-pointer" onClick={onClose} disabled={isSaving}>Cancel</Button>
+              <Button type="submit" className="flex-1 cursor-pointer" disabled={isSaving}>
+                {isSaving ? 'Saving...' : (supplier ? 'Save Changes' : 'Create Supplier')}
+              </Button>
             </div>
           </form>
         </CardContent>

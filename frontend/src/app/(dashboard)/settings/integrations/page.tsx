@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface Integration {
   id: string;
@@ -43,12 +44,12 @@ interface Integration {
 
 const integrationsList: Integration[] = [
   // Payment Integrations
-  { id: 'stripe', name: 'Stripe', description: 'Accept card payments online and in-person', category: 'payment', icon: CreditCard, status: 'connected', isAvailable: true, isPremium: false, lastSync: new Date().toISOString() },
+  { id: 'stripe', name: 'Stripe', description: 'Accept card payments online and in-person', category: 'payment', icon: CreditCard, status: 'disconnected', isAvailable: true, isPremium: false },
   { id: 'square', name: 'Square', description: 'Payment processing and POS hardware', category: 'payment', icon: CreditCard, status: 'disconnected', isAvailable: true, isPremium: false },
   { id: 'paypal', name: 'PayPal', description: 'Accept PayPal and card payments', category: 'payment', icon: CreditCard, status: 'disconnected', isAvailable: true, isPremium: false },
 
   // Communication
-  { id: 'twilio', name: 'Twilio', description: 'SMS notifications and alerts', category: 'communication', icon: MessageSquare, status: 'connected', isAvailable: true, isPremium: false, lastSync: new Date(Date.now() - 3600000).toISOString() },
+  { id: 'twilio', name: 'Twilio', description: 'SMS notifications and alerts', category: 'communication', icon: MessageSquare, status: 'disconnected', isAvailable: true, isPremium: false },
   { id: 'sendgrid', name: 'SendGrid', description: 'Transactional email delivery', category: 'communication', icon: Mail, status: 'disconnected', isAvailable: true, isPremium: false },
   { id: 'mailchimp', name: 'Mailchimp', description: 'Email marketing campaigns', category: 'communication', icon: Mail, status: 'disconnected', isAvailable: true, isPremium: true },
 
@@ -58,7 +59,7 @@ const integrationsList: Integration[] = [
   { id: 'grubhub', name: 'Grubhub', description: 'Grubhub marketplace integration', category: 'delivery', icon: Truck, status: 'disconnected', isAvailable: false, isPremium: true },
 
   // Analytics
-  { id: 'google-analytics', name: 'Google Analytics', description: 'Website and app analytics', category: 'analytics', icon: BarChart3, status: 'error', isAvailable: true, isPremium: false },
+  { id: 'google-analytics', name: 'Google Analytics', description: 'Website and app analytics', category: 'analytics', icon: BarChart3, status: 'disconnected', isAvailable: true, isPremium: false },
   { id: 'mixpanel', name: 'Mixpanel', description: 'Product analytics and user tracking', category: 'analytics', icon: BarChart3, status: 'disconnected', isAvailable: true, isPremium: true },
 
   // E-commerce
@@ -92,7 +93,27 @@ export default function IntegrationsPage() {
   const [configWebhookSecret, setConfigWebhookSecret] = useState('');
 
   useEffect(() => {
-    setTimeout(() => setIsLoading(false), 500);
+    const loadIntegrations = async () => {
+      try {
+        const response = await apiClient.get<any>('/tenants/current/settings');
+        const settings = response.data?.data || response.data || {};
+        const savedIntegrations = settings.integrations || {};
+
+        // Merge saved integration statuses with static list
+        setIntegrations(prev => prev.map(i => {
+          const saved = savedIntegrations[i.id];
+          if (saved) {
+            return { ...i, status: saved.status || i.status, lastSync: saved.lastSync || i.lastSync };
+          }
+          return i;
+        }));
+      } catch {
+        // Use defaults from static list if settings fail to load
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadIntegrations();
   }, []);
 
   const filteredIntegrations = integrations.filter(integration => {
@@ -148,18 +169,35 @@ export default function IntegrationsPage() {
     setConfigModal(integration);
   };
 
-  const handleDisconnect = (integration: Integration) => {
+  const handleDisconnect = async (integration: Integration) => {
     if (!window.confirm('Are you sure you want to disconnect this integration?')) return;
-    setIntegrations(prev => prev.map(i => {
-      if (i.id !== integration.id) return i;
-      const { lastSync, ...rest } = i;
-      return { ...rest, status: 'disconnected' as const };
-    }));
-    addToast({
-      type: 'success',
-      title: 'Disconnected',
-      message: `${integration.name} has been disconnected`,
-    });
+    try {
+      await apiClient.put('/tenants/current/settings', {
+        integrations: {
+          [integration.id]: {
+            status: 'disconnected',
+            apiKey: null,
+            webhookSecret: null,
+          },
+        },
+      });
+      setIntegrations(prev => prev.map(i => {
+        if (i.id !== integration.id) return i;
+        const { lastSync, ...rest } = i;
+        return { ...rest, status: 'disconnected' as const };
+      }));
+      addToast({
+        type: 'success',
+        title: 'Disconnected',
+        message: `${integration.name} has been disconnected`,
+      });
+    } catch {
+      addToast({
+        type: 'error',
+        title: 'Disconnect failed',
+        message: 'Please try again',
+      });
+    }
   };
 
   const formatLastSync = (dateString?: string) => {
@@ -344,7 +382,7 @@ export default function IntegrationsPage() {
                     </>
                   ) : integration.status === 'error' ? (
                     <>
-                      <Button variant="outline" size="sm" className="flex-1 text-red-600 cursor-pointer">
+                      <Button variant="outline" size="sm" className="flex-1 text-red-600 cursor-pointer" onClick={() => handleConnect(integration)}>
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Reconnect
                       </Button>
@@ -405,8 +443,16 @@ export default function IntegrationsPage() {
                 <Button className="flex-1 cursor-pointer" disabled={!configApiKey.trim() || connecting} onClick={async () => {
                   setConnecting(true);
                   try {
-                    // API call would go here
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await apiClient.put('/tenants/current/settings', {
+                      integrations: {
+                        [configModal.id]: {
+                          apiKey: configApiKey,
+                          ...(configWebhookSecret ? { webhookSecret: configWebhookSecret } : {}),
+                          status: 'connected',
+                          lastSync: new Date().toISOString(),
+                        },
+                      },
+                    });
                     setIntegrations(prev => prev.map(i =>
                       i.id === configModal.id ? { ...i, status: 'connected' as const, lastSync: new Date().toISOString() } : i
                     ));

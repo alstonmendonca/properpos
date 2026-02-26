@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -13,11 +13,14 @@ import {
   Users,
   Package,
   Building2,
+  Loader2,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUIStore } from '@/store';
+import { apiClient } from '@/lib/api-client';
 
 interface Subscription {
   plan: 'starter' | 'professional' | 'enterprise';
@@ -100,6 +103,21 @@ export default function BillingSettingsPage() {
   const addToast = useUIStore(s => s.addToast);
   const [isLoading, setIsLoading] = useState(true);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('monthly');
+  const [upgradingPlanId, setUpgradingPlanId] = useState<string | null>(null);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+
+  // Payment method modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [savingPaymentMethod, setSavingPaymentMethod] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    cardNumber: '',
+    expiryMonth: '',
+    expiryYear: '',
+    cvc: '',
+    name: '',
+  });
 
   const [subscription, setSubscription] = useState<Subscription>({
     plan: 'professional',
@@ -112,21 +130,39 @@ export default function BillingSettingsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
 
-  useEffect(() => {
-    setTimeout(() => {
-      setInvoices([
-        { id: 'INV-001', date: new Date(Date.now() - 86400000 * 30).toISOString(), amount: 79, status: 'paid', description: 'Professional Plan - Monthly' },
-        { id: 'INV-002', date: new Date(Date.now() - 86400000 * 60).toISOString(), amount: 79, status: 'paid', description: 'Professional Plan - Monthly' },
-        { id: 'INV-003', date: new Date(Date.now() - 86400000 * 90).toISOString(), amount: 79, status: 'paid', description: 'Professional Plan - Monthly' },
-      ]);
+  // Fetch billing data from API
+  const fetchBillingData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiClient.get<{
+        subscription?: Subscription;
+        invoices?: Invoice[];
+        paymentMethods?: PaymentMethod[];
+      }>('/billing');
+      const data = response.data;
 
-      setPaymentMethods([
-        { id: 'pm_1', type: 'card', brand: 'Visa', last4: '4242', expiryMonth: 12, expiryYear: 2025, isDefault: true },
-      ]);
-
+      if (data?.subscription) {
+        setSubscription(data.subscription);
+        setBillingInterval(data.subscription.interval);
+      }
+      if (data?.invoices) {
+        setInvoices(data.invoices);
+      }
+      if (data?.paymentMethods) {
+        setPaymentMethods(data.paymentMethods);
+      }
+    } catch (error: any) {
+      // Show empty state - no hardcoded fallback data
+      setInvoices([]);
+      setPaymentMethods([]);
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchBillingData();
+  }, [fetchBillingData]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -134,6 +170,216 @@ export default function BillingSettingsPage() {
       day: 'numeric',
       year: 'numeric',
     });
+  };
+
+  // --- Upgrade / Change Plan ---
+  const handleUpgrade = async (planId: string) => {
+    const targetPlan = plans.find(p => p.id === planId);
+    if (!targetPlan) return;
+
+    const price = billingInterval === 'monthly' ? targetPlan.monthlyPrice : targetPlan.yearlyPrice;
+    const confirmed = window.confirm(
+      `Are you sure you want to switch to the ${targetPlan.name} plan at $${price}/${billingInterval === 'monthly' ? 'month' : 'year'}?`
+    );
+    if (!confirmed) return;
+
+    setUpgradingPlanId(planId);
+    try {
+      const response = await apiClient.post<{ subscription?: Subscription }>('/billing/subscribe', {
+        planId,
+        interval: billingInterval,
+      });
+
+      if (response.data?.subscription) {
+        setSubscription(response.data.subscription);
+      } else {
+        // Optimistic update
+        setSubscription(prev => ({
+          ...prev,
+          plan: planId as Subscription['plan'],
+          price,
+          interval: billingInterval,
+        }));
+      }
+
+      addToast({
+        type: 'success',
+        title: 'Plan updated',
+        message: `You have been switched to the ${targetPlan.name} plan.`,
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Upgrade failed',
+        message: error.message || 'Could not process the plan change. Please try again.',
+      });
+    } finally {
+      setUpgradingPlanId(null);
+    }
+  };
+
+  // --- Download Invoice ---
+  const handleDownloadInvoice = async (invoiceId: string) => {
+    setDownloadingInvoiceId(invoiceId);
+    try {
+      const response = await apiClient.get<Blob | string>(`/billing/invoices/${invoiceId}/download`, {
+        responseType: 'blob',
+      } as any);
+
+      // Handle the download
+      const data = response.data;
+      let blob: Blob;
+
+      if (data instanceof Blob) {
+        blob = data;
+      } else if (typeof data === 'string') {
+        blob = new Blob([data], { type: 'application/pdf' });
+      } else {
+        // Fallback: try to use the raw response
+        blob = new Blob([JSON.stringify(data)], { type: 'application/pdf' });
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${invoiceId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      addToast({
+        type: 'success',
+        title: 'Invoice downloaded',
+        message: `Invoice ${invoiceId} has been downloaded.`,
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Download failed',
+        message: error.message || 'Could not download the invoice. Please try again.',
+      });
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
+
+  // --- Cancel Subscription ---
+  const handleCancelSubscription = async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.'
+    );
+    if (!confirmed) return;
+
+    const reason = window.prompt('Could you let us know why you are cancelling? (optional)') || '';
+
+    setCancellingSubscription(true);
+    try {
+      await apiClient.post('/billing/cancel', { reason });
+
+      setSubscription(prev => ({
+        ...prev,
+        status: 'cancelled',
+      }));
+
+      addToast({
+        type: 'success',
+        title: 'Subscription cancelled',
+        message: `Your subscription has been cancelled. You will retain access until ${formatDate(subscription.currentPeriodEnd)}.`,
+      });
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: 'Cancellation failed',
+        message: error.message || 'Could not cancel the subscription. Please try again or contact support.',
+      });
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
+  // --- Add / Edit Payment Method ---
+  const openPaymentModal = (method?: PaymentMethod) => {
+    if (method) {
+      setEditingPaymentMethod(method);
+      setPaymentForm({
+        cardNumber: `**** **** **** ${method.last4}`,
+        expiryMonth: method.expiryMonth.toString().padStart(2, '0'),
+        expiryYear: method.expiryYear.toString(),
+        cvc: '',
+        name: '',
+      });
+    } else {
+      setEditingPaymentMethod(null);
+      setPaymentForm({
+        cardNumber: '',
+        expiryMonth: '',
+        expiryYear: '',
+        cvc: '',
+        name: '',
+      });
+    }
+    setShowPaymentModal(true);
+  };
+
+  const handleSavePaymentMethod = async () => {
+    // Basic validation
+    if (!editingPaymentMethod) {
+      if (!paymentForm.cardNumber || !paymentForm.expiryMonth || !paymentForm.expiryYear || !paymentForm.cvc) {
+        addToast({
+          type: 'error',
+          title: 'Missing information',
+          message: 'Please fill in all card details.',
+        });
+        return;
+      }
+    }
+
+    setSavingPaymentMethod(true);
+    try {
+      if (editingPaymentMethod) {
+        // Update existing payment method
+        await apiClient.put(`/billing/payment-methods/${editingPaymentMethod.id}`, {
+          expiryMonth: parseInt(paymentForm.expiryMonth),
+          expiryYear: parseInt(paymentForm.expiryYear),
+        });
+        addToast({
+          type: 'success',
+          title: 'Payment method updated',
+          message: 'Your payment method has been updated.',
+        });
+      } else {
+        // Add new payment method
+        const response = await apiClient.post<{ paymentMethod?: PaymentMethod }>('/billing/payment-methods', {
+          cardNumber: paymentForm.cardNumber.replace(/\s/g, ''),
+          expiryMonth: parseInt(paymentForm.expiryMonth),
+          expiryYear: parseInt(paymentForm.expiryYear),
+          cvc: paymentForm.cvc,
+          name: paymentForm.name,
+        });
+
+        if (response.data?.paymentMethod) {
+          setPaymentMethods(prev => [...prev, response.data!.paymentMethod!]);
+        }
+        addToast({
+          type: 'success',
+          title: 'Card added',
+          message: 'Your payment method has been added successfully.',
+        });
+      }
+
+      setShowPaymentModal(false);
+      // Refresh billing data to get updated payment methods
+      fetchBillingData();
+    } catch (error: any) {
+      addToast({
+        type: 'error',
+        title: editingPaymentMethod ? 'Update failed' : 'Card not added',
+        message: error.message || 'Could not save the payment method. Please try again.',
+      });
+    } finally {
+      setSavingPaymentMethod(false);
+    }
   };
 
   const currentPlan = plans.find(p => p.id === subscription.plan);
@@ -270,7 +516,8 @@ export default function BillingSettingsPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {plans.map(plan => {
             const price = billingInterval === 'monthly' ? plan.monthlyPrice : plan.yearlyPrice;
-            const isCurrentPlan = plan.id === subscription.plan;
+            const isCurrentPlan = plan.id === subscription.plan && billingInterval === subscription.interval;
+            const isUpgrading = upgradingPlanId === plan.id;
 
             return (
               <Card
@@ -311,14 +558,19 @@ export default function BillingSettingsPage() {
                   <Button
                     variant={isCurrentPlan ? 'outline' : plan.popular ? 'default' : 'outline'}
                     className="w-full cursor-pointer"
-                    disabled={isCurrentPlan}
-                    onClick={() => {
-                      if (!isCurrentPlan) {
-                        addToast({ type: 'info', title: 'Coming Soon', message: 'Plan upgrade coming soon' });
-                      }
-                    }}
+                    disabled={isCurrentPlan || isUpgrading || !!upgradingPlanId}
+                    onClick={() => handleUpgrade(plan.id)}
                   >
-                    {isCurrentPlan ? 'Current Plan' : 'Upgrade'}
+                    {isUpgrading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : isCurrentPlan ? (
+                      'Current Plan'
+                    ) : (
+                      plan.id === subscription.plan ? 'Switch Interval' : 'Upgrade'
+                    )}
                   </Button>
                 </CardContent>
               </Card>
@@ -331,43 +583,67 @@ export default function BillingSettingsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Payment Methods</CardTitle>
-          <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => addToast({ type: 'info', title: 'Coming Soon', message: 'Payment method management coming soon' })}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="cursor-pointer"
+            onClick={() => openPaymentModal()}
+          >
             <CreditCard className="w-4 h-4 mr-2" />
             Add Card
           </Button>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {paymentMethods.map(method => (
-              <div
-                key={method.id}
-                className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-8 bg-background rounded flex items-center justify-center border border-border">
-                    <CreditCard className="w-5 h-5 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">
-                      {method.brand} •••• {method.last4}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Expires {method.expiryMonth}/{method.expiryYear}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {method.isDefault && (
-                    <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
-                      Default
-                    </span>
-                  )}
-                  <Button variant="ghost" size="sm">
-                    Edit
-                  </Button>
-                </div>
+            {paymentMethods.length === 0 ? (
+              <div className="text-center py-8">
+                <CreditCard className="w-10 h-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-sm text-muted-foreground">No payment methods on file.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => openPaymentModal()}
+                >
+                  Add your first card
+                </Button>
               </div>
-            ))}
+            ) : (
+              paymentMethods.map(method => (
+                <div
+                  key={method.id}
+                  className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-8 bg-background rounded flex items-center justify-center border border-border">
+                      <CreditCard className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {method.brand} &bull;&bull;&bull;&bull; {method.last4}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Expires {method.expiryMonth}/{method.expiryYear}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {method.isDefault && (
+                      <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                        Default
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openPaymentModal(method)}
+                    >
+                      Edit
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
@@ -418,9 +694,18 @@ export default function BillingSettingsPage() {
                       </span>
                     </td>
                     <td className="p-4">
-                      <Button variant="ghost" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={downloadingInvoiceId === invoice.id}
+                        onClick={() => handleDownloadInvoice(invoice.id)}
+                      >
+                        {downloadingInvoiceId === invoice.id ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4 mr-2" />
+                        )}
+                        {downloadingInvoiceId === invoice.id ? 'Downloading...' : 'Download'}
                       </Button>
                     </td>
                   </tr>
@@ -432,24 +717,178 @@ export default function BillingSettingsPage() {
       </Card>
 
       {/* Cancel Subscription */}
-      <Card className="border-destructive/20">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-destructive/10 rounded-lg flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
+      {subscription.status !== 'cancelled' && (
+        <Card className="border-destructive/20">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-destructive/10 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium text-foreground">Cancel Subscription</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Once you cancel, you'll lose access to all premium features at the end of your billing period.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                disabled={cancellingSubscription}
+                onClick={handleCancelSubscription}
+              >
+                {cancellingSubscription ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Cancelling...
+                  </>
+                ) : (
+                  'Cancel Plan'
+                )}
+              </Button>
             </div>
-            <div className="flex-1">
-              <h3 className="font-medium text-foreground">Cancel Subscription</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Once you cancel, you'll lose access to all premium features at the end of your billing period.
-              </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Subscription already cancelled notice */}
+      {subscription.status === 'cancelled' && (
+        <Card className="border-amber-500/20">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium text-foreground">Subscription Cancelled</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your subscription has been cancelled. You will retain access to premium features until {formatDate(subscription.currentPeriodEnd)}.
+                  You can upgrade to a new plan at any time.
+                </p>
+              </div>
             </div>
-            <Button variant="outline" className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer">
-              Cancel Plan
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Payment Method Modal */}
+      {showPaymentModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowPaymentModal(false)}
+        >
+          <Card className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>
+                {editingPaymentMethod ? 'Edit Payment Method' : 'Add Payment Method'}
+              </CardTitle>
+              <button
+                className="p-1 hover:bg-accent rounded"
+                onClick={() => setShowPaymentModal(false)}
+              >
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!editingPaymentMethod && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Cardholder Name
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.name}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="John Doe"
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Card Number
+                </label>
+                <input
+                  type="text"
+                  value={paymentForm.cardNumber}
+                  onChange={(e) => setPaymentForm(prev => ({ ...prev, cardNumber: e.target.value }))}
+                  placeholder="4242 4242 4242 4242"
+                  disabled={!!editingPaymentMethod}
+                  maxLength={19}
+                  className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Month
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.expiryMonth}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, expiryMonth: e.target.value }))}
+                    placeholder="MM"
+                    maxLength={2}
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Year
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.expiryYear}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, expiryYear: e.target.value }))}
+                    placeholder="YYYY"
+                    maxLength={4}
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    CVC
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentForm.cvc}
+                    onChange={(e) => setPaymentForm(prev => ({ ...prev, cvc: e.target.value }))}
+                    placeholder="123"
+                    maxLength={4}
+                    className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowPaymentModal(false)}
+                  disabled={savingPaymentMethod}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={savingPaymentMethod}
+                  onClick={handleSavePaymentMethod}
+                >
+                  {savingPaymentMethod ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    editingPaymentMethod ? 'Update Card' : 'Add Card'
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

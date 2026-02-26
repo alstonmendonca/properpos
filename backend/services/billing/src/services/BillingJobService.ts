@@ -10,6 +10,8 @@ import {
 
 import { SubscriptionService } from './SubscriptionService';
 
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008';
+
 interface ProcessingResult {
   processed: number;
   succeeded: number;
@@ -471,7 +473,26 @@ export class BillingJobService {
         subscriptionId: subscription.id,
       });
 
-      // TODO: Send trial expiration notification
+      // Send trial expiration notification
+      try {
+        const adminEmail = await this.getTenantAdminEmail(subscription.tenantId);
+        if (adminEmail) {
+          await this.sendNotificationEmail(
+            adminEmail,
+            'Your trial has expired',
+            `Your trial for the ${subscription.planName} plan has expired. Please add a payment method to continue using the service.`,
+            `<h2>Your trial has expired</h2>
+<p>Your trial for the <strong>${subscription.planName}</strong> plan has expired.</p>
+<p>Please add a payment method to continue using the service. Without a payment method, your account access will be limited.</p>
+<p>If you have any questions, please contact our support team.</p>`
+          );
+        }
+      } catch (notificationError) {
+        logger.warn('Failed to send trial expiration notification', {
+          tenantId: subscription.tenantId,
+          error: notificationError instanceof Error ? notificationError.message : 'Unknown',
+        });
+      }
     }
   }
 
@@ -586,7 +607,35 @@ export class BillingJobService {
   }
 
   private async sendBillingReminder(subscription: BillingSubscription): Promise<void> {
-    // TODO: Implement email notification
+    const formattedDate = subscription.nextBillingDate
+      ? moment(subscription.nextBillingDate).format('MMMM D, YYYY')
+      : 'upcoming';
+    const formattedAmount = `${subscription.currency.toUpperCase()} ${subscription.amount.toFixed(2)}`;
+
+    try {
+      const adminEmail = await this.getTenantAdminEmail(subscription.tenantId);
+      if (adminEmail) {
+        await this.sendNotificationEmail(
+          adminEmail,
+          `Billing reminder: ${formattedAmount} due on ${formattedDate}`,
+          `This is a reminder that your ${subscription.planName} plan (${subscription.billingCycle}) will be billed ${formattedAmount} on ${formattedDate}.`,
+          `<h2>Upcoming billing reminder</h2>
+<p>This is a reminder that your subscription will be billed soon.</p>
+<table style="border-collapse: collapse; margin: 16px 0;">
+  <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Plan</td><td>${subscription.planName} (${subscription.billingCycle})</td></tr>
+  <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Amount</td><td>${formattedAmount}</td></tr>
+  <tr><td style="padding: 4px 12px 4px 0; font-weight: bold;">Billing date</td><td>${formattedDate}</td></tr>
+</table>
+<p>If you have any questions about your billing, please contact our support team.</p>`
+        );
+      }
+    } catch (notificationError) {
+      logger.warn('Failed to send billing reminder notification', {
+        tenantId: subscription.tenantId,
+        error: notificationError instanceof Error ? notificationError.message : 'Unknown',
+      });
+    }
+
     logger.info('Billing reminder sent', {
       tenantId: subscription.tenantId,
       nextBillingDate: subscription.nextBillingDate,
@@ -667,6 +716,46 @@ export class BillingJobService {
     return violations;
   }
 
+  private async getTenantAdminEmail(tenantId: string): Promise<string | null> {
+    try {
+      const db = getPlatformDatabase();
+      const tenantsCollection = db.collection('tenants');
+      const tenant = await tenantsCollection.findOne(
+        { id: tenantId },
+        { projection: { adminEmail: 1, email: 1, ownerEmail: 1 } }
+      );
+      if (!tenant) {
+        logger.warn('Tenant not found for notification', { tenantId });
+        return null;
+      }
+      return tenant.adminEmail || tenant.ownerEmail || tenant.email || null;
+    } catch (error) {
+      logger.error('Failed to look up tenant admin email', {
+        tenantId,
+        error: error instanceof Error ? error.message : 'Unknown',
+      });
+      return null;
+    }
+  }
+
+  private async sendNotificationEmail(to: string, subject: string, body: string, html?: string): Promise<void> {
+    const payload: { to: string; subject: string; body: string; html?: string } = { to, subject, body };
+    if (html) {
+      payload.html = html;
+    }
+
+    const response = await fetch(`${NOTIFICATION_SERVICE_URL}/internal/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Notification service returned ${response.status}: ${text}`);
+    }
+  }
+
   private async handleLimitViolations(tenantId: string, violations: string[]): Promise<void> {
     const db = getPlatformDatabase();
     const alertsCollection = db.collection('usage_alerts');
@@ -685,6 +774,29 @@ export class BillingJobService {
       violations,
     });
 
-    // TODO: Send notification to tenant admin
+    // Send notification to tenant admin
+    try {
+      const adminEmail = await this.getTenantAdminEmail(tenantId);
+      if (adminEmail) {
+        const severity = violations.some(v => v.includes('exceeded')) ? 'EXCEEDED' : 'WARNING';
+        const violationList = violations.map(v => `- ${v}`).join('\n');
+        const violationListHtml = violations.map(v => `<li>${v}</li>`).join('');
+
+        await this.sendNotificationEmail(
+          adminEmail,
+          `Usage limit ${severity.toLowerCase()}: Action required`,
+          `Usage limit violations detected for your account:\n\n${violationList}\n\nPlease review your usage or consider upgrading your plan.`,
+          `<h2>Usage limit ${severity.toLowerCase()}</h2>
+<p>The following usage limit violations have been detected for your account:</p>
+<ul>${violationListHtml}</ul>
+<p>Please review your usage or consider upgrading your plan to avoid service disruptions.</p>`
+        );
+      }
+    } catch (notificationError) {
+      logger.warn('Failed to send limit violation notification', {
+        tenantId,
+        error: notificationError instanceof Error ? notificationError.message : 'Unknown',
+      });
+    }
   }
 }

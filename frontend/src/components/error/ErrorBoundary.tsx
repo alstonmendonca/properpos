@@ -42,7 +42,37 @@ export class ErrorBoundary extends Component<Props, State> {
     // Call optional error handler
     this.props.onError?.(error, errorInfo);
 
-    // TODO: Send to error tracking service (e.g., Sentry)
+    // Report to error tracking service
+    this.reportError(error, errorInfo);
+  }
+
+  private reportError(error: Error, errorInfo: ErrorInfo): void {
+    try {
+      const errorPayload = {
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        timestamp: new Date().toISOString(),
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      };
+
+      // Send to backend error tracking endpoint (fire-and-forget)
+      if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/errors/report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorPayload),
+        }).catch(() => { /* silently ignore reporting failures */ });
+      }
+
+      // If Sentry is available, use it
+      if (typeof window !== 'undefined' && (window as any).Sentry) {
+        (window as any).Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
+      }
+    } catch {
+      // Never let error reporting break the app
+    }
   }
 
   handleRetry = (): void => {
