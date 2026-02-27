@@ -392,8 +392,8 @@ authRoutes.post('/refresh', async (req: Request, res: Response) => {
 
     // Check for session to determine if rememberMe was set
     const sessionKey = `session:${userId}`;
-    const sessionData = await cache.get(sessionKey);
-    const rememberMe = sessionData ? JSON.parse(sessionData).rememberMe : false;
+    const sessionData = await cache.get<{ rememberMe?: boolean }>(sessionKey);
+    const rememberMe = sessionData ? sessionData.rememberMe : false;
 
     // Generate new access token
     const accessToken = generateToken({

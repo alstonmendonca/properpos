@@ -59,7 +59,7 @@ interface ApiConfig {
   maxRequestSizeMb: number;
 }
 
-interface FeatureFlags {
+interface FeatureFlagsConfig {
   enableMFA: boolean;
   enableWebPush: boolean;
   enableEmailNotifications: boolean;
@@ -75,7 +75,7 @@ interface EnvironmentConfig {
   logging: LoggingConfig;
   security: SecurityConfig;
   api: ApiConfig;
-  features: FeatureFlags;
+  features: FeatureFlagsConfig;
 }
 
 // Development configuration - relaxed limits, verbose logging
@@ -455,7 +455,7 @@ export type {
   LoggingConfig,
   SecurityConfig,
   ApiConfig,
-  FeatureFlags,
+  FeatureFlagsConfig,
 };
 
 // Export singleton config instance

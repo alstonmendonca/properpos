@@ -70,7 +70,7 @@ app.use(helmet({
       baseUri: ["'self'"],
       formAction: ["'self'"],
       frameAncestors: ["'none'"],
-      upgradeInsecureRequests: isProduction ? [] : undefined,
+      upgradeInsecureRequests: isProduction ? [] : null,
     },
     reportOnly: false,
   },

@@ -27,7 +27,26 @@ export {
   invalidatePermissionCache,
 } from './middleware/authorization';
 export * from './middleware/validation';
-export * from './middleware/security';
+// Note: csrfProtection and generateCsrfToken are also exported from ./utils/cookies
+// The cookies versions are the primary exports; security versions use different signatures
+export {
+  sanitizeInput,
+  preventNoSQLInjection,
+  csrfProtection as securityCsrfProtection,
+  generateCsrfToken as securityGenerateCsrfToken,
+  ipBlocklist,
+  blockIP,
+  trackFailedLogin,
+  resetFailedLogins,
+  fingerprintRequest,
+  detectSuspiciousActivity,
+  apiKeyAuth,
+  validateContentType,
+  validateRequestSize,
+  additionalSecurityHeaders,
+  verify2FA,
+  setup2FA,
+} from './middleware/security';
 export * from './middleware/quota';
 
 // Export error utilities

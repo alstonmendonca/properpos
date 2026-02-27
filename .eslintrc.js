@@ -1,0 +1,42 @@
+module.exports = {
+  root: true,
+  parser: '@typescript-eslint/parser',
+  plugins: ['@typescript-eslint'],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'prettier',
+  ],
+  env: {
+    node: true,
+    es2020: true,
+    jest: true,
+  },
+  parserOptions: {
+    ecmaVersion: 2020,
+    sourceType: 'module',
+  },
+  rules: {
+    '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-require-imports': 'off',
+    '@typescript-eslint/no-var-requires': 'off',
+    '@typescript-eslint/no-namespace': 'off',
+    '@typescript-eslint/ban-types': 'warn',
+    '@typescript-eslint/no-duplicate-enum-values': 'warn',
+    'no-console': 'off',
+    'no-case-declarations': 'warn',
+    'no-control-regex': 'warn',
+    'no-useless-escape': 'warn',
+    'prefer-const': 'warn',
+  },
+  ignorePatterns: [
+    'node_modules/',
+    'dist/',
+    '.next/',
+    'coverage/',
+    'frontend/',
+    '*.js',
+    '!.eslintrc.js',
+  ],
+};

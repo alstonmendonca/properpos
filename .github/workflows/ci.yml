@@ -404,7 +404,7 @@ jobs:
     name: Notify Staging Deployment
     runs-on: ubuntu-latest
     needs: smoke-test-staging
-    if: always()
+    if: always() && vars.SLACK_ENABLED == 'true'
     steps:
       - name: Notify deployment
         uses: slackapi/slack-github-action@v1
@@ -573,7 +573,7 @@ jobs:
     name: Notify Production Deployment
     runs-on: ubuntu-latest
     needs: smoke-test-production
-    if: always()
+    if: always() && vars.SLACK_ENABLED == 'true'
     steps:
       - name: Notify deployment
         uses: slackapi/slack-github-action@v1

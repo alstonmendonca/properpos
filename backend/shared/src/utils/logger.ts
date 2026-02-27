@@ -113,9 +113,9 @@ const consoleFormat = winston.format.combine(
   winston.format.colorize({ all: true }),
   winston.format.printf((info) => {
     const { timestamp, level, message, service, correlationId, userId, tenantId, ...meta } = info;
-    const contextStr = correlationId ? `[${correlationId.substring(0, 8)}]` : '';
-    const userStr = userId ? `[u:${userId.substring(0, 8)}]` : '';
-    const tenantStr = tenantId ? `[t:${tenantId.substring(0, 8)}]` : '';
+    const contextStr = correlationId ? `[${String(correlationId).substring(0, 8)}]` : '';
+    const userStr = userId ? `[u:${String(userId).substring(0, 8)}]` : '';
+    const tenantStr = tenantId ? `[t:${String(tenantId).substring(0, 8)}]` : '';
     const metaStr = Object.keys(meta).length > 0 ? '\n' + JSON.stringify(meta, null, 2) : '';
     return `${timestamp} ${contextStr}${userStr}${tenantStr} [${service || 'APP'}] ${level}: ${message}${metaStr}`;
   })
@@ -133,6 +133,7 @@ const fileFormat = winston.format.combine(
     }
     // Add structured metadata
     const output = {
+      ...info,
       timestamp: info.timestamp,
       level: info.level,
       message: info.message,
@@ -143,7 +144,6 @@ const fileFormat = winston.format.combine(
       locationId: info.locationId,
       ip: info.ip,
       type: info.type,
-      ...info,
     };
     return JSON.stringify(output);
   })

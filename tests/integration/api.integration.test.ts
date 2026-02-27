@@ -1,9 +1,7 @@
 // API Integration Tests
-import * as supertest from 'supertest';
-import * as express from 'express';
-import * as jwt from 'jsonwebtoken';
-
-const request = supertest;
+import request from 'supertest';
+import express from 'express';
+import jwt from 'jsonwebtoken';
 
 // Create a minimal test app
 const createTestApp = () => {

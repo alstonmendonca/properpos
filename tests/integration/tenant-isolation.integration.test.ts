@@ -1,11 +1,9 @@
 // Tenant Isolation Integration Tests
 // Tests multi-tenant data isolation, cross-tenant access prevention, and location-based permissions
 
-import * as supertest from 'supertest';
-import * as express from 'express';
-import * as jwt from 'jsonwebtoken';
-
-const request = supertest;
+import request from 'supertest';
+import express from 'express';
+import jwt from 'jsonwebtoken';
 
 // Test constants
 const JWT_SECRET = 'test-jwt-secret-key-for-testing';
