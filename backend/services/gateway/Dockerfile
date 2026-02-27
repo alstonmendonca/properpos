@@ -16,10 +16,10 @@ COPY services/gateway/package*.json ./services/gateway/
 
 # Install dependencies (production only)
 WORKDIR /app/shared/backend-shared
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 WORKDIR /app/services/gateway
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Build stage
 FROM base AS builder

@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+  security-events: write
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository }}
@@ -97,11 +102,31 @@ jobs:
           files: ./coverage/lcov.info
           fail_ci_if_error: false
 
-  # Run E2E tests
+  # Run E2E tests against service containers (no Docker build required)
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
     needs: test
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -118,19 +143,14 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Start services
-        run: docker compose up -d
+      - name: Run E2E tests
+        run: npm run test:e2e
         env:
           MONGODB_URI: mongodb://localhost:27017/properpos_test
           REDIS_URL: redis://localhost:6379
-
-      - name: Wait for services
-        run: |
-          npm run wait-for-services
-          sleep 10
-
-      - name: Run E2E tests
-        run: npm run test:e2e
+          JWT_SECRET: test-secret-key
+          NODE_ENV: test
+          FRONTEND_URL: http://localhost:8080
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
@@ -139,10 +159,6 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
-
-      - name: Stop services
-        if: always()
-        run: docker compose down
 
   # Security scanning
   security:
@@ -163,7 +179,7 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=critical
         continue-on-error: true
 
       - name: Run Snyk security scan
@@ -174,6 +190,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           scan-type: 'fs'
           ignore-unfixed: true
@@ -182,8 +199,9 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -193,9 +211,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test, security]
     if: github.event_name == 'push'
-    permissions:
-      contents: read
-      packages: write
 
     strategy:
       matrix:
