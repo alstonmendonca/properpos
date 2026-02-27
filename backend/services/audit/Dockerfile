@@ -1,64 +1,49 @@
 # ProperPOS Audit Service Dockerfile
 FROM node:20-alpine AS base
+RUN apk add --no-cache tini curl
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Stage 1: Build @properpos/shared types package
+FROM base AS shared-build
+WORKDIR /build
+COPY shared/package.json shared/tsconfig.json ./
+COPY shared/src ./src
+RUN npm install && npm run build
 
-# Install dependencies only when needed
-FROM base AS deps
-WORKDIR /app
+# Stage 2: Build @properpos/backend-shared
+FROM base AS backend-shared-build
+WORKDIR /build/shared
+COPY --from=shared-build /build ./
+WORKDIR /build/backend-shared
+COPY backend/shared/package.json backend/shared/tsconfig.json ./
+COPY backend/shared/src ./src
+RUN sed -i 's/"@properpos\/shared": "\*"/"@properpos\/shared": "file:..\/shared"/' package.json \
+    && npm install && npm run build
 
-# Copy shared packages first
-COPY shared ./shared
+# Stage 3: Build service
+FROM base AS service-build
+WORKDIR /build/shared
+COPY --from=shared-build /build ./
+WORKDIR /build/backend-shared
+COPY --from=backend-shared-build /build/backend-shared ./
+WORKDIR /build/service
+COPY backend/services/audit/package*.json ./
+COPY backend/services/audit/tsconfig.json ./
+COPY backend/services/audit/src ./src
+RUN sed -i 's/"@properpos\/backend-shared": "\*"/"@properpos\/backend-shared": "file:..\/backend-shared"/' package.json \
+    && npm install && npm run build
 
-# Copy audit service package files
-COPY services/audit/package*.json ./services/audit/
-
-# Install dependencies
-WORKDIR /app/shared/backend-shared
-RUN npm install
-
-WORKDIR /app/services/audit
-RUN npm install
-
-# Build stage
-FROM base AS builder
-WORKDIR /app
-
-COPY --from=deps /app/shared ./shared
-COPY --from=deps /app/services/audit/node_modules ./services/audit/node_modules
-COPY services/audit ./services/audit
-
-WORKDIR /app/shared/backend-shared
-RUN npm run build
-
-WORKDIR /app/services/audit
-RUN npm run build
-
-# Production stage
+# Production
 FROM base AS runner
 WORKDIR /app
-
 ENV NODE_ENV=production
-
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nodeuser
-
-# Copy built application
-COPY --from=builder /app/shared/backend-shared/dist ./shared/backend-shared/dist
-COPY --from=builder /app/shared/backend-shared/package.json ./shared/backend-shared/
-COPY --from=builder /app/services/audit/dist ./services/audit/dist
-COPY --from=builder /app/services/audit/package.json ./services/audit/
-COPY --from=builder /app/services/audit/node_modules ./services/audit/node_modules
-
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodeuser
+COPY --from=service-build /build/service/dist ./dist
+COPY --from=service-build /build/service/package.json ./
+COPY --from=service-build /build/service/node_modules ./node_modules
+RUN chown -R nodeuser:nodejs /app
 USER nodeuser
-
-WORKDIR /app/services/audit
-
 EXPOSE 3009
-
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3009/health || exit 1
-
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/index.js"]

@@ -1,75 +1,49 @@
 # ProperPOS Gateway Service Dockerfile
 FROM node:20-alpine AS base
-
-# Install tini for proper signal handling and curl for health checks
 RUN apk add --no-cache tini curl
 
-# Install dependencies only when needed
-FROM base AS deps
-WORKDIR /app
+# Stage 1: Build @properpos/shared types package
+FROM base AS shared-build
+WORKDIR /build
+COPY shared/package.json shared/tsconfig.json ./
+COPY shared/src ./src
+RUN npm install && npm run build
 
-# Copy shared packages first
-COPY shared ./shared
+# Stage 2: Build @properpos/backend-shared
+FROM base AS backend-shared-build
+WORKDIR /build/shared
+COPY --from=shared-build /build ./
+WORKDIR /build/backend-shared
+COPY backend/shared/package.json backend/shared/tsconfig.json ./
+COPY backend/shared/src ./src
+RUN sed -i 's/"@properpos\/shared": "\*"/"@properpos\/shared": "file:..\/shared"/' package.json \
+    && npm install && npm run build
 
-# Copy gateway service package files
-COPY services/gateway/package*.json ./services/gateway/
+# Stage 3: Build service
+FROM base AS service-build
+WORKDIR /build/shared
+COPY --from=shared-build /build ./
+WORKDIR /build/backend-shared
+COPY --from=backend-shared-build /build/backend-shared ./
+WORKDIR /build/service
+COPY backend/services/gateway/package*.json ./
+COPY backend/services/gateway/tsconfig.json ./
+COPY backend/services/gateway/src ./src
+RUN sed -i 's/"@properpos\/backend-shared": "\*"/"@properpos\/backend-shared": "file:..\/backend-shared"/' package.json \
+    && npm install && npm run build
 
-# Install dependencies (production only)
-WORKDIR /app/shared/backend-shared
-RUN npm install --omit=dev
-
-WORKDIR /app/services/gateway
-RUN npm install --omit=dev
-
-# Build stage
-FROM base AS builder
-WORKDIR /app
-
-COPY --from=deps /app/shared ./shared
-COPY --from=deps /app/services/gateway/node_modules ./services/gateway/node_modules
-COPY services/gateway ./services/gateway
-
-# Install dev dependencies for building
-WORKDIR /app/shared/backend-shared
-RUN npm install
-RUN npm run build
-
-WORKDIR /app/services/gateway
-RUN npm install
-RUN npm run build
-
-# Production stage
+# Production
 FROM base AS runner
 WORKDIR /app
-
 ENV NODE_ENV=production
-
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nodeuser
-
-# Copy built application
-COPY --from=builder /app/shared/backend-shared/dist ./shared/backend-shared/dist
-COPY --from=builder /app/shared/backend-shared/package.json ./shared/backend-shared/
-COPY --from=builder /app/services/gateway/dist ./services/gateway/dist
-COPY --from=builder /app/services/gateway/package.json ./services/gateway/
-COPY --from=deps /app/services/gateway/node_modules ./services/gateway/node_modules
-
-# Set ownership
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodeuser
+COPY --from=service-build /build/service/dist ./dist
+COPY --from=service-build /build/service/package.json ./
+COPY --from=service-build /build/service/node_modules ./node_modules
 RUN chown -R nodeuser:nodejs /app
-
 USER nodeuser
-
-WORKDIR /app/services/gateway
-
 EXPOSE 3000
-
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
-
-# Use tini as init process for proper signal handling
 ENTRYPOINT ["/sbin/tini", "--"]
-
-# Start the application
 CMD ["node", "dist/index.js"]

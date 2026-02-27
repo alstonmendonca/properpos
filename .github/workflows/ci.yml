@@ -256,7 +256,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.service == 'frontend' && './frontend' || './backend' }}
+          context: ${{ matrix.service == 'frontend' && './frontend' || '.' }}
           file: ${{ matrix.service == 'frontend' && 'frontend/Dockerfile' || format('backend/services/{0}/Dockerfile', matrix.service) }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
