@@ -10,7 +10,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository }}
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   # Lint and type check
