@@ -183,13 +183,14 @@ export class AuthService {
         const platformDb = getPlatformDatabase();
 
         // Insert organization into platform database
-        await platformDb.collection('organizations').insertOne(organizationData, { session });
+        // Cast session to any - mongoose's ClientSession is structurally compatible with native mongodb's
+        await platformDb.collection('organizations').insertOne(organizationData, { session: session as any });
 
         // Insert user into platform database
-        await platformDb.collection('users').insertOne(userData, { session });
+        await platformDb.collection('users').insertOne(userData, { session: session as any });
 
         // Create tenant database and initial data (within the same session)
-        await this.initializeTenantDatabase(tenantId, organizationData, userData, session);
+        await this.initializeTenantDatabase(tenantId, organizationData, userData, session as any);
       });
 
       // Cache organization info (outside transaction - cache is not transactional)
@@ -296,7 +297,7 @@ export class AuthService {
         throw new Error(`Tenant database not connected for tenant: ${tenantId}`);
       }
 
-      const opts = session ? { session } : {};
+      const opts = session ? { session: session as any } : {};
 
       // Create collections with initial data
 
