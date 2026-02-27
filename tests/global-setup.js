@@ -2,11 +2,9 @@
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 module.exports = async function globalSetup() {
-  // Create MongoDB memory server instance
   const instance = await MongoMemoryServer.create();
   const uri = instance.getUri();
 
-  // Store the instance URI for tests
-  (global as any).__MONGOD__ = instance;
+  globalThis.__MONGOD__ = instance;
   process.env.MONGODB_URI = uri;
 };

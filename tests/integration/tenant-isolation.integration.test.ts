@@ -1,10 +1,11 @@
 // Tenant Isolation Integration Tests
 // Tests multi-tenant data isolation, cross-tenant access prevention, and location-based permissions
 
-import request from 'supertest';
-import express, { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
+import * as supertest from 'supertest';
+import * as express from 'express';
+import * as jwt from 'jsonwebtoken';
+
+const request = supertest;
 
 // Test constants
 const JWT_SECRET = 'test-jwt-secret-key-for-testing';
@@ -72,7 +73,7 @@ const createToken = (payload: TokenPayload): string => {
 };
 
 // Middleware: Authenticate user
-const authenticateUser = (req: Request, res: Response, next: NextFunction): void => {
+const authenticateUser = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
@@ -90,7 +91,7 @@ const authenticateUser = (req: Request, res: Response, next: NextFunction): void
 };
 
 // Middleware: Validate tenant header
-const validateTenantHeader = (req: Request, res: Response, next: NextFunction): void => {
+const validateTenantHeader = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const tenantHeader = req.headers['x-tenant-id'] as string;
   const user = (req as any).user as TokenPayload;
 
@@ -117,7 +118,7 @@ const validateTenantHeader = (req: Request, res: Response, next: NextFunction): 
 };
 
 // Middleware: Enforce location access
-const enforceLocationAccess = (req: Request, res: Response, next: NextFunction): void => {
+const enforceLocationAccess = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
   const user = (req as any).user as TokenPayload;
   const locationId = req.params.locationId || req.body.locationId || req.query.locationId;
 

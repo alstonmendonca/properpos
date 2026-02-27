@@ -33,20 +33,32 @@ module.exports = {
     '^@properpos/backend-shared$': '<rootDir>/backend/shared/src',
   },
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
-  globalSetup: '<rootDir>/tests/global-setup.ts',
-  globalTeardown: '<rootDir>/tests/global-teardown.ts',
+  globalSetup: '<rootDir>/tests/global-setup.js',
+  globalTeardown: '<rootDir>/tests/global-teardown.js',
   testTimeout: 30000,
   verbose: true,
   projects: [
     {
       displayName: 'unit',
+      preset: 'ts-jest',
       testMatch: ['<rootDir>/**/*.unit.test.ts'],
       testEnvironment: 'node',
+      transform: { '^.+\\.tsx?$': 'ts-jest' },
+      moduleNameMapper: {
+        '^@properpos/shared$': '<rootDir>/shared/src',
+        '^@properpos/backend-shared$': '<rootDir>/backend/shared/src',
+      },
     },
     {
       displayName: 'integration',
+      preset: 'ts-jest',
       testMatch: ['<rootDir>/**/*.integration.test.ts'],
       testEnvironment: 'node',
+      transform: { '^.+\\.tsx?$': 'ts-jest' },
+      moduleNameMapper: {
+        '^@properpos/shared$': '<rootDir>/shared/src',
+        '^@properpos/backend-shared$': '<rootDir>/backend/shared/src',
+      },
     },
   ],
 };
